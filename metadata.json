@@ -1,0 +1,5 @@
+{
+  "name": "Fake News Diffusion Analytics",
+  "description": "A Big Data analytics platform for detecting fake news and analyzing misinformation spread using Spark MLlib and real-time visualization.",
+  "requestFramePermissions": []
+}
