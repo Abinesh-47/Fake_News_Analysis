@@ -73,7 +73,7 @@ export default function NewsUpload({ onAnalysisComplete, user }: { onAnalysisCom
   };
 
   return (
-    <div className="royal-card p-8">
+    <div className="royal-card p-6 lg:p-8">
       <div className="flex items-center gap-3 mb-8">
         <ShieldCheck className="text-blue-400 w-4 h-4" />
         <h3 className="text-[10px] uppercase tracking-[0.4em] text-slate-500 font-bold">Imperial Truth Analysis</h3>

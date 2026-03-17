@@ -55,7 +55,7 @@ interface AnalysisResult {
 export default function Dashboard({ user, onLogout }: { user: { email: string } | null, onLogout: () => void }) {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [activeTab, setActiveTab] = useState('overview');
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [latestAnalysis, setLatestAnalysis] = useState<AnalysisResult | null>(null);
   const [allNews, setAllNews] = useState<any[]>([]);
   const [selectedDiffusionId, setSelectedDiffusionId] = useState<number | null>(null);
@@ -102,15 +102,18 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
 
   return (
     <div className="min-h-screen flex bg-[#020617] text-slate-200">
+      {/* Sidebar Overlay for Mobile */}
+      {isSidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-40 lg:hidden backdrop-blur-sm"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+
       {/* Sidebar */}
-      <AnimatePresence mode="wait">
-        {isSidebarOpen && (
-          <motion.aside 
-            initial={{ x: -260 }}
-            animate={{ x: 0 }}
-            exit={{ x: -260 }}
-            className="w-64 bg-[#0F172A] border-r border-white/5 flex flex-col fixed inset-y-0 z-50 lg:relative"
-          >
+      <aside 
+        className={`w-64 bg-[#0F172A] border-r border-white/5 flex flex-col fixed inset-y-0 left-0 z-50 transform transition-transform duration-300 lg:translate-x-0 lg:static ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
+      >
             <div className="p-8 flex items-center gap-3 border-b border-white/5">
               <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-2xl shadow-blue-500/20">
                 <Shield className="text-white w-6 h-6" />
@@ -183,19 +186,17 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
                 </Link>
               )}
             </div>
-          </motion.aside>
-        )}
-      </AnimatePresence>
+          </aside>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-y-auto">
-        <header className="sticky top-0 z-40 bg-[#020617]/80 backdrop-blur-xl border-b border-white/5 px-8 py-6 flex items-center justify-between">
+      <main className="flex-1 overflow-y-auto min-w-0">
+        <header className="sticky top-0 z-40 bg-[#020617]/80 backdrop-blur-xl border-b border-white/5 px-4 sm:px-6 lg:px-8 py-4 lg:py-6 flex items-center justify-between">
           <div className="flex items-center gap-6">
             <button 
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-              className="p-2 hover:bg-white/5 rounded-lg transition-colors text-blue-400"
+              className="p-2 hover:bg-white/5 rounded-lg transition-colors text-blue-400 lg:hidden"
             >
-              {isSidebarOpen ? <X size={20} /> : <Menu size={20} />}
+              <Menu size={20} />
             </button>
             <div>
               <h2 className="text-xl font-display font-extrabold text-white tracking-tight uppercase">
@@ -224,9 +225,9 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
           </div>
         </header>
 
-        <div className="p-12 max-w-7xl mx-auto">
+        <div className="p-4 sm:p-6 lg:p-12 max-w-7xl mx-auto w-full">
           {activeTab === 'overview' && (
-            <div className="space-y-16">
+            <div className="space-y-8 lg:space-y-16">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 <StatsCard 
                   title="Verified Records" 
@@ -254,8 +255,8 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
                 />
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-16">
-                <div className="lg:col-span-2 space-y-16">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 lg:gap-16">
+                <div className="lg:col-span-2 space-y-8 lg:space-y-16">
                   {latestAnalysis && (
                     <section>
                       <div className="flex items-center justify-between mb-8">
@@ -267,7 +268,7 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
                           View Full Dossier
                         </button>
                       </div>
-                      <div className={`royal-card p-8 border-l-4 ${
+                      <div className={`royal-card p-6 lg:p-8 border-l-4 ${
                         latestAnalysis.label === 'REAL' ? 'border-l-emerald-500' : 'border-l-red-500'
                       }`}>
                         <div className="flex items-center justify-between mb-4">
@@ -296,7 +297,7 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
                       <h3 className="text-[10px] uppercase tracking-[0.4em] text-slate-500 font-bold">Diffusion Chronology</h3>
                       <div className="h-px flex-1 bg-white/5"></div>
                     </div>
-                    <div className="royal-card p-8">
+                    <div className="royal-card p-6 lg:p-8 overflow-x-auto">
                       <DiffusionChart />
                     </div>
                   </section>
@@ -306,13 +307,13 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
                       <h3 className="text-[10px] uppercase tracking-[0.4em] text-slate-500 font-bold">Algorithmic Prowess</h3>
                       <div className="h-px flex-1 bg-white/5"></div>
                     </div>
-                    <div className="royal-card p-8">
+                    <div className="royal-card p-6 lg:p-8 overflow-x-auto">
                       <ModelComparison />
                     </div>
                   </section>
                 </div>
                 
-                <div className="space-y-16">
+                <div className="space-y-8 lg:space-y-16">
                   <NewsUpload onAnalysisComplete={handleAnalysisComplete} user={user} />
                   
                   <section>
@@ -330,8 +331,8 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
           )}
 
           {activeTab === 'archive' && (
-            <div className="space-y-12 perspective-1000">
-              <div className="flex items-center justify-between mb-8">
+            <div className="space-y-8 lg:space-y-12 perspective-1000">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-8 gap-4">
                 <div>
                   <h3 className="text-2xl font-display font-extrabold text-white uppercase tracking-tight">Intelligence Archive</h3>
                   <p className="text-slate-500 text-[10px] uppercase tracking-[0.2em] mt-2">3D Backend Data Visualization</p>
@@ -351,7 +352,7 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
                       rotateY: -5,
                       boxShadow: "0 20px 40px rgba(59, 130, 246, 0.2)"
                     }}
-                    className="royal-card p-8 cursor-pointer group relative overflow-hidden preserve-3d"
+                    className="royal-card p-6 lg:p-8 cursor-pointer group relative overflow-hidden preserve-3d"
                     onClick={() => {
                       setLatestAnalysis({
                         label: item.label as 'REAL' | 'FAKE',
@@ -405,15 +406,15 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
           )}
 
           {activeTab === 'models' && (
-            <div className="royal-card p-12">
+            <div className="royal-card p-6 lg:p-12 overflow-x-auto">
                <h3 className="text-xl font-display font-extrabold text-white mb-12 uppercase tracking-tight">Algorithmic Benchmarks</h3>
                <ModelComparison showDetails />
             </div>
           )}
 
           {activeTab === 'diffusion' && (
-            <div className="space-y-12">
-               <div className="royal-card p-12 flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div className="space-y-8 lg:space-y-12">
+               <div className="royal-card p-6 lg:p-12 flex flex-col md:flex-row md:items-center justify-between gap-6">
                  <div>
                    <h3 className="text-xl font-display font-extrabold text-white uppercase tracking-tight">Global Diffusion & Veracity</h3>
                    <p className="text-slate-500 text-[10px] uppercase tracking-[0.2em] mt-2">Select a case archive to query deep metrics</p>
@@ -421,7 +422,7 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
                  <select 
                    value={selectedDiffusionId || ''} 
                    onChange={(e) => setSelectedDiffusionId(Number(e.target.value))}
-                   className="bg-[#0F172A] border border-white/10 text-white text-xs font-bold uppercase tracking-widest rounded-xl px-4 py-3 outline-none focus:border-blue-500"
+                   className="bg-[#0F172A] border border-white/10 text-white text-xs font-bold uppercase tracking-widest rounded-xl px-4 py-3 outline-none focus:border-blue-500 w-full md:w-auto"
                  >
                    <option value="" disabled>Select Intelligence Report...</option>
                    {allNews.map(news => (
@@ -433,13 +434,13 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
                {selectedDiffusionId && allNews.find(n => n.id === selectedDiffusionId) ? (() => {
                  const selected = allNews.find(n => n.id === selectedDiffusionId);
                  return (
-                   <div className="space-y-12">
-                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-                       <div className="royal-card p-12">
+                   <div className="space-y-8 lg:space-y-12">
+                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-12">
+                       <div className="royal-card p-6 lg:p-12 overflow-x-auto">
                           <h4 className="text-[10px] uppercase tracking-[0.4em] text-slate-500 font-bold mb-8">Propagation Dynamics</h4>
                           <DiffusionChart data={selected.diffusion_data} height={350} />
                        </div>
-                       <div className="royal-card p-12 flex flex-col justify-between">
+                       <div className="royal-card p-6 lg:p-12 flex flex-col justify-between">
                           <div>
                             <div className="flex items-center justify-between mb-8">
                               <h4 className="text-[10px] uppercase tracking-[0.4em] text-slate-500 font-bold">Consensus Verdict</h4>
@@ -459,7 +460,7 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
                        </div>
                      </div>
                      
-                     <div className="royal-card p-12">
+                     <div className="royal-card p-6 lg:p-12">
                         <h4 className="text-[10px] uppercase tracking-[0.4em] text-slate-500 font-bold mb-8">Origin Identification</h4>
                         {(!selected.source_links?.original && (!selected.source_links?.others || selected.source_links.others.length === 0)) ? (
                           <div className="p-8 bg-slate-800/50 border border-white/5 rounded-xl text-center">
@@ -491,7 +492,7 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
                    </div>
                  );
                })() : (
-                 <div className="royal-card p-24 flex flex-col items-center justify-center text-center">
+                 <div className="royal-card p-12 lg:p-24 flex flex-col items-center justify-center text-center">
                    <Share2 size={48} className="text-slate-700 mb-6" />
                    <h4 className="text-sm font-bold text-slate-500 uppercase tracking-widest mb-2">No Archive Selected</h4>
                    <p className="text-[10px] text-slate-600 uppercase tracking-widest">Select an intelligence report from the dropdown above to view diffusion metrics.</p>
@@ -501,9 +502,9 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
           )}
 
           {activeTab === 'dossier' && latestAnalysis && (
-            <div className="space-y-12">
-              <div className="royal-card p-12">
-                <div className="flex items-center justify-between mb-12">
+            <div className="space-y-8 lg:space-y-12">
+              <div className="royal-card p-6 lg:p-12">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8 lg:mb-12">
                   <div>
                     <h3 className="text-2xl font-display font-extrabold text-white uppercase tracking-tight">Intelligence Dossier</h3>
                     <p className="text-slate-500 text-[10px] uppercase tracking-[0.2em] mt-2">Comprehensive Truth Verification Report</p>
@@ -516,8 +517,8 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-                  <div className="space-y-12">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12">
+                  <div className="space-y-8 lg:space-y-12">
                     <section>
                       <h4 className="text-[10px] uppercase tracking-[0.4em] text-slate-500 font-bold mb-6">Contextual Analysis</h4>
                       <p className="text-sm text-slate-300 leading-relaxed bg-white/5 p-6 rounded-xl border border-white/5">
@@ -537,7 +538,7 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
                     </section>
                   </div>
 
-                  <div className="space-y-12">
+                  <div className="space-y-8 lg:space-y-12">
                     <section>
                       <h4 className="text-[10px] uppercase tracking-[0.4em] text-slate-500 font-bold mb-6">Technical Backend (Propagation)</h4>
                       <div className="grid grid-cols-1 gap-4">
@@ -562,18 +563,18 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
                 </div>
               </div>
 
-              <div className="space-y-12">
-                <div className="royal-card p-12">
+              <div className="space-y-8 lg:space-y-12">
+                <div className="royal-card p-6 lg:p-12 overflow-x-auto">
                   <h4 className="text-[10px] uppercase tracking-[0.4em] text-slate-500 font-bold mb-8">Algorithmic Benchmarks</h4>
                   <ModelComparison models={latestAnalysis.model_results} showDetails />
                 </div>
 
-                <div className="royal-card p-12">
+                <div className="royal-card p-6 lg:p-12 overflow-x-auto">
                   <h4 className="text-[10px] uppercase tracking-[0.4em] text-slate-500 font-bold mb-8">Propagation Timeline</h4>
                   <DiffusionChart data={latestAnalysis.diffusion_data} height={400} />
                 </div>
 
-                <div className="royal-card p-12">
+                <div className="royal-card p-6 lg:p-12">
                   <h4 className="text-[10px] uppercase tracking-[0.4em] text-slate-500 font-bold mb-8">Verified Sources Archive</h4>
                   {(!latestAnalysis.source_links?.original && (!latestAnalysis.source_links?.others || latestAnalysis.source_links.others.length === 0)) ? (
                     <div className="p-8 bg-red-500/10 border border-red-500/20 rounded-xl text-center">
@@ -616,8 +617,8 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
           )}
 
           {activeTab === 'history' && user && (
-            <div className="royal-card p-12">
-               <div className="flex items-center justify-between mb-12">
+            <div className="royal-card p-6 lg:p-12">
+               <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8 lg:mb-12">
                  <h3 className="text-xl font-display font-extrabold text-white uppercase tracking-tight">Personalized History</h3>
                  <span className="text-[10px] font-bold text-blue-400 uppercase tracking-widest px-3 py-1 bg-blue-400/10 border border-blue-400/20 rounded-lg">
                    Authenticated: {user.email}
@@ -625,7 +626,7 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
                </div>
                <div className="space-y-6">
                  {allNews.filter(n => n.user_id === user.email).map((item) => (
-                   <div key={item.id} className="p-6 bg-white/5 border border-white/5 rounded-xl flex items-center justify-between group hover:border-blue-500/30 transition-all">
+                   <div key={item.id} className="p-6 bg-white/5 border border-white/5 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-4 group hover:border-blue-500/30 transition-all">
                      <div className="flex items-center gap-4">
                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${item.label === 'REAL' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'}`}>
                          <FileText size={20} />

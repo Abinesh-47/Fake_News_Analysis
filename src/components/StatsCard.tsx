@@ -12,7 +12,7 @@ export default function StatsCard({ title, value, icon, trend }: StatsCardProps)
   return (
     <motion.div 
       whileHover={{ y: -4, backgroundColor: 'rgba(255, 255, 255, 0.02)' }}
-      className="royal-card p-8 transition-all duration-500"
+      className="royal-card p-6 lg:p-8 transition-all duration-500"
     >
       <div className="flex items-start justify-between mb-8">
         <div className="w-10 h-10 bg-blue-600/10 border border-blue-500/20 rounded-lg flex items-center justify-center text-blue-400">
