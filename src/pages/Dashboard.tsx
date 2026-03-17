@@ -61,14 +61,20 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
   const [selectedDiffusionId, setSelectedDiffusionId] = useState<number | null>(null);
 
   useEffect(() => {
-    fetch('/api/analytics/summary')
-      .then(res => res.json())
-      .then(setSummary);
-    
-    fetch('/api/news/all')
-      .then(res => res.json())
-      .then(setAllNews);
-  }, []);
+    if (user) {
+      fetch('/api/analytics/summary')
+        .then(res => res.json())
+        .then(setSummary);
+      
+      fetch('/api/news/all')
+        .then(res => res.json())
+        .then(setAllNews);
+    } else {
+      setSummary(null);
+      setAllNews([]);
+      setLatestAnalysis(null);
+    }
+  }, [user]);
 
   const handleAnalysisComplete = (result: AnalysisResult) => {
     setLatestAnalysis(result);
@@ -307,7 +313,7 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
                 </div>
                 
                 <div className="space-y-16">
-                  <NewsUpload onAnalysisComplete={handleAnalysisComplete} />
+                  <NewsUpload onAnalysisComplete={handleAnalysisComplete} user={user} />
                   
                   <section>
                     <h3 className="text-[10px] uppercase tracking-[0.4em] text-slate-500 font-bold mb-8">Operational Hierarchy</h3>
@@ -618,7 +624,7 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
                  </span>
                </div>
                <div className="space-y-6">
-                 {allNews.map((item) => (
+                 {allNews.filter(n => n.user_id === user.email).map((item) => (
                    <div key={item.id} className="p-6 bg-white/5 border border-white/5 rounded-xl flex items-center justify-between group hover:border-blue-500/30 transition-all">
                      <div className="flex items-center gap-4">
                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${item.label === 'REAL' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'}`}>

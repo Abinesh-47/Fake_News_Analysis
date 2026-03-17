@@ -19,7 +19,7 @@ interface AnalysisResult {
   diffusion_data?: any[];
 }
 
-export default function NewsUpload({ onAnalysisComplete }: { onAnalysisComplete?: (result: AnalysisResult) => void }) {
+export default function NewsUpload({ onAnalysisComplete, user }: { onAnalysisComplete?: (result: AnalysisResult) => void, user?: { email: string } | null }) {
   const [text, setText] = useState('');
   const [analyzing, setAnalyzing] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
@@ -57,6 +57,7 @@ export default function NewsUpload({ onAnalysisComplete }: { onAnalysisComplete?
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           text,
+          user_id: user?.email,
           ...finalResult
         })
       });
