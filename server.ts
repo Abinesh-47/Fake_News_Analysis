@@ -172,7 +172,10 @@ async function startServer() {
 
     const openai = new OpenAI({
       baseURL: "https://openrouter.ai/api/v1",
-      apiKey: process.env.OPENAI_API_KEY
+      apiKey: process.env.OPENAI_API_KEY,
+      defaultHeaders: {
+        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`
+      }
     });
 
     try {

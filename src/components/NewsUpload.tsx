@@ -40,7 +40,7 @@ export default function NewsUpload({ onAnalysisComplete, user }: { onAnalysisCom
 
       if (!response.ok) {
         const errorBody = await response.json().catch(() => null);
-        throw new Error(errorBody?.error || 'OpenAI analysis failed');
+        throw new Error(errorBody?.details || errorBody?.error || 'OpenAI analysis failed');
       }
 
       const analysis = await response.json();
@@ -64,9 +64,9 @@ export default function NewsUpload({ onAnalysisComplete, user }: { onAnalysisCom
 
       setResult(finalResult);
       if (onAnalysisComplete) onAnalysisComplete(finalResult);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Analysis failed:', err);
-      setError('Imperial Intelligence failed to reach the archives. Please try again.');
+      setError(err.message || 'Imperial Intelligence failed to reach the archives. Please try again.');
     } finally {
       setAnalyzing(false);
     }
