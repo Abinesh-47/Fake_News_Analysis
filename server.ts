@@ -166,15 +166,12 @@ async function startServer() {
       return res.status(400).json({ error: 'Missing or invalid "text" in request body' });
     }
 
-    if (!process.env.OPENAI_API_KEY) {
-      return res.status(500).json({ error: 'OpenAI API key is not configured. Set OPENAI_API_KEY in your environment.' });
-    }
-
+    const key = (process.env.OPENAI_API_KEY || '').trim();
     const openai = new OpenAI({
       baseURL: "https://openrouter.ai/api/v1",
-      apiKey: process.env.OPENAI_API_KEY,
+      apiKey: key,
       defaultHeaders: {
-        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`
+        "Authorization": `Bearer ${key}`
       }
     });
 
