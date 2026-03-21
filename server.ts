@@ -181,7 +181,7 @@ function getModels(text: string, aiLabel?: string, aiConfidence?: number) {
       status: 'TRAINED' 
     },
     { 
-      name: 'Neural Veracity Engine', 
+      name: 'Random Forest', 
       accuracy: Number((0.94 + (matchReal ? 0.02 : -0.02) + drift).toFixed(2)), 
       precision: Number((0.92 + drift).toFixed(2)),
       recall: Number((0.95 + drift).toFixed(2)),
