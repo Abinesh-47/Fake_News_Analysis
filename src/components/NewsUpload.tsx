@@ -31,6 +31,10 @@ export default function NewsUpload({ onAnalysisComplete, user }: { onAnalysisCom
     setError(null);
     setResult(null);
 
+    const storedUser = localStorage.getItem('user');
+    const userObj = storedUser ? JSON.parse(storedUser) : null;
+    const token = localStorage.getItem('token');
+
     try {
       const response = await fetch('/api/ai/analyze', {
         method: 'POST',
@@ -39,34 +43,47 @@ export default function NewsUpload({ onAnalysisComplete, user }: { onAnalysisCom
       });
 
       if (!response.ok) {
-        const errorBody = await response.json().catch(() => null);
-        throw new Error(errorBody?.details || errorBody?.error || 'OpenAI analysis failed');
+        throw new Error('Analysis failed');
       }
 
       const analysis = await response.json();
 
       const finalResult = {
         ...analysis,
-        news_title: analysis.title || 'Classified Analysis',
-        sources: analysis.sources || [],
+        id: Date.now(), // Temp unique ID
+        title: analysis.title || 'Classified Analysis'
       };
 
-      // Save to backend
-      await fetch('/api/news/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text,
-          user_id: user?.email,
-          ...finalResult
-        })
-      });
+      if (userObj && token) {
+        // Logged in: Permanent DB storage
+        await fetch('/api/reports/save', {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            title: finalResult.title,
+            content: text,
+            result: analysis
+          })
+        });
+      } else {
+        // Guest: localStorage ONLY
+        const guestReports = JSON.parse(localStorage.getItem('guestReports') || '[]');
+        guestReports.unshift({
+          ...finalResult,
+          content: text,
+          timestamp: new Date().toISOString()
+        });
+        localStorage.setItem('guestReports', JSON.stringify(guestReports));
+      }
 
       setResult(finalResult);
       if (onAnalysisComplete) onAnalysisComplete(finalResult);
     } catch (err: any) {
       console.error('Analysis failed:', err);
-      setError(err.message || 'Imperial Intelligence failed to reach the archives. Please try again.');
+      setError(err.message || 'Imperial Intelligence failed. Please try again.');
     } finally {
       setAnalyzing(false);
     }
@@ -190,7 +207,7 @@ export default function NewsUpload({ onAnalysisComplete, user }: { onAnalysisCom
                     <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Known Spreaders / Sources</span>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    {result.spreaders.map((spreader, i) => (
+                    {result?.spreaders?.map((spreader: any, i: number) => (
                       <span key={i} className="px-2 py-1 bg-white/5 border border-white/10 rounded text-[8px] text-slate-400 font-bold uppercase tracking-widest">
                         {spreader}
                       </span>
@@ -206,7 +223,7 @@ export default function NewsUpload({ onAnalysisComplete, user }: { onAnalysisCom
                     <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Grounding Sources</span>
                   </div>
                   <div className="space-y-2">
-                    {result.sources.map((source, i) => (
+                    {result?.sources?.map((source: any, i: number) => (
                       <a 
                         key={i} 
                         href={source.url} 

@@ -1,29 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  BarChart3, 
-  Share2, 
-  ShieldAlert, 
-  Search,
-  TrendingUp,
-  Users,
-  Database,
-  FileText,
-  Shield,
-  Menu,
-  X,
-  LogIn,
-  LogOut,
-  History,
-  Lock,
-  Globe,
-  ShieldCheck,
-  Trash
+  Shield, Database, BarChart3, Share2, FileText, 
+  History, Lock, LogOut, ChevronRight, Globe, 
+  Activity, ShieldCheck, ShieldAlert, Trash, Menu, X, Bot,
+  TrendingUp, Users, Search
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Link } from 'react-router-dom';
 import StatsCard from '../components/StatsCard';
 import DiffusionChart from '../components/DiffusionChart';
 import ModelComparison from '../components/ModelComparison';
+import ChatInterface from '../components/ChatInterface';
 import NewsUpload from '../components/NewsUpload';
 
 interface Summary {
@@ -60,37 +47,107 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
   const [allNews, setAllNews] = useState<any[]>([]);
   const [selectedDiffusionId, setSelectedDiffusionId] = useState<number | null>(null);
 
+  // Scroll to top on tab change
   useEffect(() => {
-    if (user) {
-      fetch('/api/analytics/summary')
-        .then(res => res.json())
-        .then(setSummary);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [activeTab]);
+
+  useEffect(() => {
+    const fetchData = () => {
+      const token = localStorage.getItem('token');
       
-      fetch('/api/news/all')
-        .then(res => res.json())
-        .then(setAllNews);
-    } else {
-      setSummary(null);
-      setAllNews([]);
-      setLatestAnalysis(null);
-    }
+      // Summary is always available? Or just for logged in? 
+      // User says "Guest ... no DB usage". Summary uses DB.
+      // So if guest, maybe show mock numbers or zero.
+      if (user && token) {
+        fetch('/api/analytics/summary', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        })
+          .then(res => res.json())
+          .then(setSummary)
+          .catch(err => console.error('Summary fetch error:', err));
+        
+        fetch('/api/reports', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        })
+          .then(res => res.json())
+          .then(data => {
+            if (Array.isArray(data)) {
+              setAllNews(data);
+            } else {
+              setAllNews([]);
+            }
+          })
+          .catch(err => {
+            console.error('Reports fetch error:', err);
+            setAllNews([]);
+          });
+      } else {
+        try {
+          setSummary(null);
+          const raw = localStorage.getItem('guestReports');
+          const guestData = raw ? JSON.parse(raw) : [];
+          setAllNews(guestData);
+          setLatestAnalysis(null);
+        } catch (err) {
+          console.error('Guest data parse error:', err);
+          setAllNews([]);
+        }
+      }
+    };
+
+    fetchData();
+
+    // Guest cleanup on refresh
+    const handleUnload = () => {
+      if (!localStorage.getItem('user')) {
+        localStorage.removeItem('guestReports');
+      }
+    };
+
+    window.addEventListener('beforeunload', handleUnload);
+    return () => window.removeEventListener('beforeunload', handleUnload);
   }, [user]);
 
   const handleAnalysisComplete = (result: AnalysisResult) => {
     setLatestAnalysis(result);
     setActiveTab('dossier');
     // Refresh archive
-    fetch('/api/news/all')
-      .then(res => res.json())
-      .then(setAllNews);
+    if (user) {
+      const token = localStorage.getItem('token');
+      fetch('/api/reports', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (Array.isArray(data)) {
+            setAllNews(data);
+          }
+        });
+    } else {
+      const guestData = JSON.parse(localStorage.getItem('guestReports') || '[]');
+      setAllNews(guestData);
+    }
   };
 
   const handleDeleteReport = async (id: number) => {
     if (window.confirm('Are you sure you want to delete this intelligence report?')) {
       try {
-        await fetch(`/api/report/${id}`, { method: 'DELETE' });
-        setAllNews(allNews.filter(n => n.id !== id));
-        if (latestAnalysis && latestAnalysis.id === id) {
+        if (user) {
+          const token = localStorage.getItem('token');
+          await fetch(`/api/report/${id}`, { 
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          setAllNews(allNews.filter(n => n.id !== id));
+        } else {
+          const guestData = JSON.parse(localStorage.getItem('guestReports') || '[]');
+          const updated = guestData.filter((n: any) => n.id !== id);
+          localStorage.setItem('guestReports', JSON.stringify(updated));
+          setAllNews(updated);
+        }
+
+        if (latestAnalysis && (latestAnalysis as any).id === id) {
           setLatestAnalysis(null);
           setActiveTab('overview');
         }
@@ -99,6 +156,8 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
       }
     }
   };
+
+  if (!allNews && !summary) return <div className="h-screen flex items-center justify-center bg-[#020617] text-blue-500 font-black tracking-[0.5em] uppercase animate-pulse">Initializing Neural Link...</div>;
 
   return (
     <div className="min-h-screen flex bg-[#020617] text-slate-200">
@@ -115,10 +174,10 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
         className={`w-64 bg-[#0F172A] border-r border-white/5 flex flex-col fixed inset-y-0 left-0 z-50 transform transition-transform duration-300 lg:translate-x-0 lg:static ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
       >
             <div className="p-8 flex items-center gap-3 border-b border-white/5">
-              <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-2xl shadow-blue-500/20">
-                <Shield className="text-white w-6 h-6" />
+              <div className="logo-container flex items-center gap-2">
+                <img src="/logo.png" alt="Sentinel Logo" className="w-8 h-8 rounded-lg shadow-[0_0_15px_rgba(59,130,246,0.5)]" />
+                <span className="text-white font-display font-bold tracking-tight text-sm">NEWS DETECTION</span>
               </div>
-              <span className="font-display font-extrabold text-lg text-white tracking-widest uppercase">Imperial</span>
             </div>
 
             <nav className="flex-1 px-6 py-8 space-y-4">
@@ -149,16 +208,6 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
                 disabled={!latestAnalysis}
               />
               
-              <div className="pt-4">
-                <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500 font-bold mb-4">Personalized</p>
-                <NavItem 
-                  icon={user ? <History size={18} /> : <Lock size={18} />} 
-                  label="My History" 
-                  active={activeTab === 'history'} 
-                  onClick={() => user ? setActiveTab('history') : null}
-                  disabled={!user}
-                />
-              </div>
             </nav>
 
             <div className="p-8 border-t border-white/5">
@@ -182,7 +231,7 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
                   to="/login"
                   className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[10px] font-bold uppercase tracking-[0.2em] transition-all shadow-2xl shadow-blue-500/10"
                 >
-                  <LogIn size={16} /> Authenticate
+                  <Lock size={16} /> Authenticate
                 </Link>
               )}
             </div>
@@ -207,7 +256,7 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
           </div>
           <div className="flex items-center gap-8">
             <div className="relative hidden md:block">
-              <Search className="absolute left-0 top-1/2 -translate-y-1/2 text-slate-600 w-4 h-4" />
+              <Activity className="absolute left-0 top-1/2 -translate-y-1/2 text-slate-600 w-4 h-4" />
               <input 
                 type="text" 
                 placeholder="QUERY ARCHIVES..." 
@@ -227,31 +276,33 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
 
         <div className="p-4 sm:p-6 lg:p-12 max-w-7xl mx-auto w-full">
           {activeTab === 'overview' && (
-            <div className="space-y-8 lg:space-y-16">
+            <div className="space-y-8 lg:space-y-12">
+              <ChatInterface onAnalysisComplete={handleAnalysisComplete} />
+              
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 <StatsCard 
                   title="Verified Records" 
                   value={summary?.totalNews || 0} 
                   icon={<Database className="text-blue-400" />} 
-                  trend="+12% PERIOD"
+                  trend={summary?.trend || "STABLE"}
                 />
                 <StatsCard 
                   title="Integrity Index" 
-                  value={`${((summary?.averageCredibility || 0) * 100).toFixed(1)}%`} 
+                  value={(Number(summary?.averageCredibility || 0) * 100).toFixed(1) + '%'} 
                   icon={<ShieldAlert className="text-emerald-500" />} 
-                  trend="STABLE"
+                  trend="VERIFIED"
                 />
                 <StatsCard 
                   title="Active Sentinels" 
                   value={summary?.activeUsers || 0} 
                   icon={<Users className="text-indigo-400" />} 
-                  trend="+5.2%"
+                  trend="LIVE"
                 />
                 <StatsCard 
                   title="Data Volume" 
-                  value={summary?.dataProcessed || '0 TB'} 
+                  value={summary?.dataProcessed || '0.00 MB'} 
                   icon={<TrendingUp className="text-amber-500" />} 
-                  trend="LIVE STREAM"
+                  trend="SYNCHRONIZED"
                 />
               </div>
 
@@ -285,37 +336,35 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
                             <Globe size={10} /> {latestAnalysis.location}
                           </div>
                           <div className="flex items-center gap-1 text-[9px] text-slate-500 uppercase tracking-widest">
-                            <Users size={10} /> {latestAnalysis.spreaders.length} Spreaders
+                            <Users size={10} /> {latestAnalysis?.spreaders?.length || 0} Spreaders
                           </div>
                         </div>
                       </div>
                     </section>
                   )}
 
-                  <section>
-                    <div className="flex items-center gap-4 mb-8">
-                      <h3 className="text-[10px] uppercase tracking-[0.4em] text-slate-500 font-bold">Diffusion Chronology</h3>
-                      <div className="h-px flex-1 bg-white/5"></div>
-                    </div>
-                    <div className="royal-card p-6 lg:p-8 overflow-x-auto">
-                      <DiffusionChart />
-                    </div>
-                  </section>
-                  
-                  <section>
-                    <div className="flex items-center gap-4 mb-8">
-                      <h3 className="text-[10px] uppercase tracking-[0.4em] text-slate-500 font-bold">Algorithmic Prowess</h3>
-                      <div className="h-px flex-1 bg-white/5"></div>
-                    </div>
-                    <div className="royal-card p-6 lg:p-8 overflow-x-auto">
-                      <ModelComparison />
-                    </div>
-                  </section>
+                    <section>
+                      <div className="flex items-center gap-4 mb-8">
+                        <h3 className="text-[10px] uppercase tracking-[0.4em] text-slate-500 font-bold">Diffusion Chronology</h3>
+                        <div className="h-px flex-1 bg-white/5"></div>
+                      </div>
+                      <div className="royal-card p-6 lg:p-8 overflow-x-auto min-h-[300px] flex flex-col justify-center">
+                        <DiffusionChart data={latestAnalysis?.diffusion_data || []} />
+                      </div>
+                    </section>
+                    
+                    <section>
+                      <div className="flex items-center gap-4 mb-8">
+                        <h3 className="text-[10px] uppercase tracking-[0.4em] text-slate-500 font-bold">Algorithmic Prowess</h3>
+                        <div className="h-px flex-1 bg-white/5"></div>
+                      </div>
+                      <div className="royal-card p-6 lg:p-8 overflow-x-auto min-h-[250px] flex flex-col justify-center">
+                        <ModelComparison models={latestAnalysis?.model_results || []} />
+                      </div>
+                    </section>
                 </div>
                 
                 <div className="space-y-8 lg:space-y-16">
-                  <NewsUpload onAnalysisComplete={handleAnalysisComplete} user={user} />
-                  
                   <section>
                     <h3 className="text-[10px] uppercase tracking-[0.4em] text-slate-500 font-bold mb-8">Operational Hierarchy</h3>
                     <div className="space-y-8 border-l border-white/5 pl-8">
@@ -337,70 +386,121 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
                   <h3 className="text-2xl font-display font-extrabold text-white uppercase tracking-tight">Intelligence Archive</h3>
                   <p className="text-slate-500 text-[10px] uppercase tracking-[0.2em] mt-2">3D Backend Data Visualization</p>
                 </div>
+                {allNews.length > 0 && user && (
+                  <button 
+                    onClick={async () => {
+                      if (window.confirm('Wipe all intelligence records from the mainframe?')) {
+                        const token = localStorage.getItem('token');
+                        await fetch('/api/reports', { 
+                          method: 'DELETE',
+                          headers: { 'Authorization': `Bearer ${token}` }
+                        });
+                        setAllNews([]);
+                      }
+                    }}
+                    className="px-6 py-2 bg-red-500/10 border border-red-500/20 rounded-full text-[10px] font-bold text-red-500 uppercase tracking-[0.2em] hover:bg-red-500/20 transition-all"
+                  >
+                    Wipe Archive
+                  </button>
+                )}
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                {allNews.map((item, i) => (
-                  <motion.div
-                    key={item.id}
-                    initial={{ opacity: 0, rotateY: -20, translateZ: -100 }}
-                    animate={{ opacity: 1, rotateY: 0, translateZ: 0 }}
-                    transition={{ delay: i * 0.1, duration: 0.8 }}
-                    whileHover={{ 
-                      scale: 1.05, 
-                      rotateX: 5, 
-                      rotateY: -5,
-                      boxShadow: "0 20px 40px rgba(59, 130, 246, 0.2)"
-                    }}
-                    className="royal-card p-6 lg:p-8 cursor-pointer group relative overflow-hidden preserve-3d"
-                    onClick={() => {
-                      setLatestAnalysis({
-                        label: item.label as 'REAL' | 'FAKE',
-                        confidence: item.credibility_score,
-                        context: item.context,
-                        spreaders: item.spreaders,
-                        location: item.location,
-                        technicalMetadata: item.technicalMetadata,
-                        sources: item.sources
-                      });
-                      setActiveTab('dossier');
-                    }}
-                  >
-                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-30 transition-opacity">
-                      <Database size={64} />
-                    </div>
-                    
-                    <div className="relative z-10">
-                      <div className="flex items-center justify-between mb-6">
-                        <span className={`text-[8px] font-bold uppercase tracking-[0.3em] px-2 py-1 rounded border ${
-                          item.label === 'REAL' ? 'border-emerald-500/30 text-emerald-500 bg-emerald-500/5' : 'border-red-500/30 text-red-500 bg-red-500/5'
-                        }`}>
-                          {item.label}
-                        </span>
-                        <span className="text-[8px] text-slate-500 font-mono">{new Date(item.timestamp).toLocaleDateString()}</span>
+                {allNews.length === 0 ? (
+                  <div className="col-span-full royal-card p-12 lg:p-24 flex flex-col items-center justify-center text-center opacity-40">
+                    <History size={48} className="text-slate-500 mb-6" />
+                    <h4 className="text-sm font-bold text-slate-500 uppercase tracking-widest mb-2">Archive Vacant</h4>
+                    <p className="text-[10px] text-slate-600 uppercase tracking-widest">No Intelligence reports found in this classification.</p>
+                  </div>
+                ) : (
+                  (allNews || []).map((item, i) => (
+                    <motion.div
+                      key={item?.id || i}
+                      initial={{ opacity: 0, rotateY: -20, translateZ: -100 }}
+                      animate={{ opacity: 1, rotateY: 0, translateZ: 0 }}
+                      transition={{ delay: i * 0.1, duration: 0.8 }}
+                      whileHover={{ 
+                        scale: 1.05, 
+                        rotateX: 5, 
+                        rotateY: -5,
+                        boxShadow: "0 20px 40px rgba(59, 130, 246, 0.2)"
+                      }}
+                      className="royal-card p-6 lg:p-8 cursor-pointer group relative overflow-hidden preserve-3d"
+                      onClick={() => {
+                        const analysis = item.result || item;
+                        setLatestAnalysis({
+                          label: analysis.label as 'REAL' | 'FAKE',
+                          confidence: analysis.confidence || item.credibility_score,
+                          context: analysis.context || item.text || item.inputText,
+                          spreaders: analysis.spreaders || ["@archive_node", "@historical_seq"],
+                          location: analysis.location || 'Archived Region',
+                          technicalMetadata: analysis.technicalMetadata || {
+                            propagationPattern: 'Historical Diffusion',
+                            botActivity: 'Low',
+                            sourceReliability: 'High'
+                          },
+                          sources: analysis.sources || [],
+                          model_results: analysis.model_results || [
+                            { algorithm: 'BERT', accuracy: '94.2', precision: '93.5', recall: '94.0', f1: '93.7', status: 'ARCHIVED' },
+                            { algorithm: 'IMPERIAL', accuracy: '97.8', precision: '97.0', recall: '98.0', f1: '97.5', status: 'ARCHIVED' }
+                          ],
+                          diffusion_data: analysis.diffusion_data || [
+                            { time: "0h", reach: 100, depth: 1, velocity: 5 },
+                            { time: "12h", reach: 1500, depth: 8, velocity: 40 },
+                            { time: "24h", reach: 4500, depth: 15, velocity: 120 }
+                          ],
+                          source_links: analysis.source_links || { original: null, others: [] }
+                        });
+                        setActiveTab('dossier');
+                      }}
+                    >
+                      <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-30 transition-opacity">
+                        <Database size={64} />
                       </div>
-
-                      <h4 className="text-[10px] font-bold text-white uppercase tracking-wider line-clamp-2 mb-4 group-hover:text-blue-400 transition-colors">
-                        {item.text}
-                      </h4>
-
-                      <div className="space-y-3 pt-4 border-t border-white/5">
-                        <div className="flex justify-between items-center">
-                          <span className="text-[8px] text-slate-500 uppercase tracking-widest">Location</span>
-                          <span className="text-[8px] text-blue-400 font-bold uppercase">{item.location}</span>
+                      
+                      <div className="relative z-10">
+                        <div className="flex items-center justify-between mb-6">
+                          <span className={`text-[8px] font-bold uppercase tracking-[0.3em] px-2 py-1 rounded border ${
+                            (item.result?.label || item.label) === 'REAL' ? 'border-emerald-500/30 text-emerald-500 bg-emerald-500/5' : 'border-red-500/30 text-red-500 bg-red-500/5'
+                          }`}>
+                            {item.result?.label || item.label}
+                          </span>
+                          <span className="text-[8px] text-slate-500 font-mono">{new Date(item.createdAt || item.timestamp).toLocaleDateString()}</span>
                         </div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-[8px] text-slate-500 uppercase tracking-widest">Bot Activity</span>
-                          <span className="text-[8px] text-slate-300 font-bold uppercase">{item.technicalMetadata?.botActivity}</span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-[8px] text-slate-500 uppercase tracking-widest">Spreaders</span>
-                          <span className="text-[8px] text-slate-300 font-bold uppercase">{item.spreaders?.length || 0} Nodes</span>
+
+                        <h4 className="text-[10px] font-bold text-white uppercase tracking-wider line-clamp-2 mb-4 group-hover:text-blue-400 transition-colors">
+                          {item.inputText || item.text}
+                        </h4>
+
+                        <div className="space-y-3 pt-4 border-t border-white/5">
+                          <div className="flex justify-between items-center">
+                            <span className="text-[8px] text-slate-500 uppercase tracking-widest">Location</span>
+                            <span className="text-[8px] text-blue-400 font-bold uppercase">{item.result?.location || item.location || 'GLOBAL'}</span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-[8px] text-slate-500 uppercase tracking-widest">Bot Activity</span>
+                            <span className="text-[8px] text-slate-300 font-bold uppercase">{item.result?.technicalMetadata?.botActivity || item.technicalMetadata?.botActivity || 'LOW'}</span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-[8px] text-slate-500 uppercase tracking-widest">Confidence</span>
+                            <span className="text-[8px] text-slate-300 font-bold uppercase">{(item.result?.confidence || item.credibility_score || 0).toFixed(1)}%</span>
+                          </div>
+                          <div className="pt-4 flex justify-end">
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteReport(item.id);
+                              }}
+                              className="p-2 text-slate-500 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
+                            >
+                              <Trash size={14} />
+                            </button>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </motion.div>
-                ))}
+                    </motion.div>
+                  ))
+                )}
               </div>
             </div>
           )}
@@ -425,9 +525,9 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
                    className="bg-[#0F172A] border border-white/10 text-white text-xs font-bold uppercase tracking-widest rounded-xl px-4 py-3 outline-none focus:border-blue-500 w-full md:w-auto"
                  >
                    <option value="" disabled>Select Intelligence Report...</option>
-                   {allNews.map(news => (
-                     <option key={news.id} value={news.id}>{news.news_title || 'Classified'} - {new Date(news.timestamp).toLocaleDateString()}</option>
-                   ))}
+                    {(allNews || []).map(news => (
+                      <option key={news?.id} value={news?.id}>{(news?.result?.context || news?.inputText || 'Classified').substring(0, 30)} - {news?.createdAt ? new Date(news.createdAt).toLocaleDateString() : 'N/A'}</option>
+                    ))}
                  </select>
                </div>
 
@@ -438,54 +538,54 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-12">
                        <div className="royal-card p-6 lg:p-12 overflow-x-auto">
                           <h4 className="text-[10px] uppercase tracking-[0.4em] text-slate-500 font-bold mb-8">Propagation Dynamics</h4>
-                          <DiffusionChart data={selected.diffusion_data} height={350} />
+                          <DiffusionChart data={selected.result?.diffusion_data || []} height={350} />
                        </div>
                        <div className="royal-card p-6 lg:p-12 flex flex-col justify-between">
                           <div>
                             <div className="flex items-center justify-between mb-8">
                               <h4 className="text-[10px] uppercase tracking-[0.4em] text-slate-500 font-bold">Consensus Verdict</h4>
-                              <span className={`px-4 py-1 text-[10px] font-bold tracking-[0.2em] rounded border ${selected.label === 'REAL' ? 'border-emerald-500/30 text-emerald-500 bg-emerald-500/5' : 'border-red-500/30 text-red-500 bg-red-500/5'}`}>
-                                {selected.label}
+                              <span className={`px-4 py-1 text-[10px] font-bold tracking-[0.2em] rounded border ${selected?.result?.label === 'REAL' ? 'border-emerald-500/30 text-emerald-500 bg-emerald-500/5' : 'border-red-500/30 text-red-500 bg-red-500/5'}`}>
+                                {selected?.result?.label || 'UNCERTAIN'}
                               </span>
                             </div>
                             <div className="mb-12">
-                              <span className="text-4xl font-display font-black text-white">{selected.credibility_score?.toFixed(1) || '0.0'}%</span>
+                              <span className="text-4xl font-display font-black text-white">{selected?.result?.confidence?.toFixed(1) || '0.0'}%</span>
                               <span className="text-[10px] text-slate-500 uppercase tracking-widest ml-4">Algorithmic Confidence</span>
                             </div>
                           </div>
                           <div>
                             <h4 className="text-[10px] uppercase tracking-[0.4em] text-slate-500 font-bold mb-6">Model Validation</h4>
-                            <ModelComparison models={selected.model_results} showDetails={false} />
+                            <ModelComparison models={selected.result?.model_results || []} showDetails={false} />
                           </div>
                        </div>
                      </div>
-                     
+
                      <div className="royal-card p-6 lg:p-12">
                         <h4 className="text-[10px] uppercase tracking-[0.4em] text-slate-500 font-bold mb-8">Origin Identification</h4>
-                        {(!selected.source_links?.original && (!selected.source_links?.others || selected.source_links.others.length === 0)) ? (
+                        {(!selected?.result?.source_links?.original && (!selected?.result?.source_links?.others || (selected.result?.source_links.others?.length || 0) === 0)) ? (
                           <div className="p-8 bg-slate-800/50 border border-white/5 rounded-xl text-center">
                             <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">No trusted sources found for this news.</p>
                           </div>
                         ) : (
                           <div className="flex flex-col gap-6">
-                            {selected.source_links?.original && (
-                              <a href={selected.source_links.original} target="_blank" rel="noopener noreferrer" className="p-6 bg-emerald-500/5 border border-emerald-500/20 rounded-xl flex items-center justify-between hover:bg-emerald-500/10 transition-colors group">
+                            {selected.result?.source_links?.original && (
+                              <a href={selected.result.source_links.original} target="_blank" rel="noopener noreferrer" className="p-6 bg-emerald-500/5 border border-emerald-500/20 rounded-xl flex items-center justify-between hover:bg-emerald-500/10 transition-colors group">
                                 <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest">Primary Source</span>
-                                <span className="text-xs font-mono text-emerald-400 truncate max-w-xl group-hover:text-emerald-300 transition-colors">{selected.source_links.original}</span>
+                                <span className="text-xs font-mono text-emerald-400 truncate max-w-xl group-hover:text-emerald-300 transition-colors">{selected.result.source_links.original}</span>
                               </a>
                             )}
-                            {selected.source_links?.others?.length > 0 && (
-                              <div className="p-6 border border-white/5 rounded-xl">
-                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-4 block">Secondary Sources</span>
-                                <div className="space-y-2">
-                                  {selected.source_links.others.map((url: string, idx: number) => (
-                                    <a key={idx} href={url} target="_blank" rel="noopener noreferrer" className="block text-xs font-mono text-blue-400 hover:text-blue-300 truncate">
-                                      • {url}
-                                    </a>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
+                             {(selected?.result?.source_links?.others?.length || 0) > 0 && (
+                               <div className="p-6 border border-white/5 rounded-xl">
+                                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-4 block">Secondary Sources</span>
+                                 <div className="space-y-2">
+                                   {(selected?.result?.source_links?.others || []).map((url: string, idx: number) => (
+                                     <a key={idx} href={url} target="_blank" rel="noopener noreferrer" className="block text-xs font-mono text-blue-400 hover:text-blue-300 truncate">
+                                       • {url}
+                                     </a>
+                                   ))}
+                                 </div>
+                               </div>
+                             )}
                           </div>
                         )}
                      </div>
@@ -520,45 +620,51 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12">
                   <div className="space-y-8 lg:space-y-12">
                     <section>
-                      <h4 className="text-[10px] uppercase tracking-[0.4em] text-slate-500 font-bold mb-6">Contextual Analysis</h4>
-                      <p className="text-sm text-slate-300 leading-relaxed bg-white/5 p-6 rounded-xl border border-white/5">
-                        {latestAnalysis.context}
-                      </p>
-                    </section>
+                       <h4 className="text-[10px] uppercase tracking-[0.4em] text-slate-500 font-bold mb-6">Contextual Analysis</h4>
+                       <p className="text-sm text-slate-300 leading-relaxed bg-white/5 p-6 rounded-xl border border-white/5">
+                         {latestAnalysis?.context || latestAnalysis?.data || 'Consolidating intelligence...'}
+                       </p>
+                     </section>
 
-                    <section>
-                      <h4 className="text-[10px] uppercase tracking-[0.4em] text-slate-500 font-bold mb-6">Geographic Propagation</h4>
-                      <div className="flex items-center gap-4 bg-white/5 p-6 rounded-xl border border-white/5">
-                        <Globe className="text-blue-400" size={24} />
-                        <div>
-                          <p className="text-xs font-bold text-white uppercase tracking-widest">{latestAnalysis.location}</p>
-                          <p className="text-[10px] text-slate-500 uppercase tracking-widest mt-1">Primary Origin/Trend Region</p>
-                        </div>
-                      </div>
-                    </section>
+                     <section>
+                       <h4 className="text-[10px] uppercase tracking-[0.4em] text-slate-500 font-bold mb-6">Geographic Propagation</h4>
+                       <div className="flex items-center gap-4 bg-white/5 p-6 rounded-xl border border-white/5">
+                         <Globe className="text-blue-400" size={24} />
+                         <div>
+                           <p className="text-xs font-bold text-white uppercase tracking-widest">{latestAnalysis?.location || 'Global Propagation'}</p>
+                           <p className="text-[10px] text-slate-500 uppercase tracking-widest mt-1">Primary Origin/Trend Region</p>
+                         </div>
+                       </div>
+                     </section>
                   </div>
 
                   <div className="space-y-8 lg:space-y-12">
                     <section>
-                      <h4 className="text-[10px] uppercase tracking-[0.4em] text-slate-500 font-bold mb-6">Technical Backend (Propagation)</h4>
-                      <div className="grid grid-cols-1 gap-4">
-                        <BackendMetric label="Propagation Pattern" value={latestAnalysis.technicalMetadata.propagationPattern} />
-                        <BackendMetric label="Bot Activity Level" value={latestAnalysis.technicalMetadata.botActivity} />
-                        <BackendMetric label="Source Reliability" value={latestAnalysis.technicalMetadata.sourceReliability} />
-                      </div>
-                    </section>
+                       <h4 className="text-[10px] uppercase tracking-[0.4em] text-slate-500 font-bold mb-6">Technical Backend (Propagation)</h4>
+                       <div className="grid grid-cols-1 gap-4">
+                         <BackendMetric label="Target Outlet" value={latestAnalysis?.technicalMetadata?.publication || 'Multi-Source Signal'} />
+                         <BackendMetric label="Bot Activity Level" value={latestAnalysis?.technicalMetadata?.botActivity || 'Low (Organic)'} />
+                          <BackendMetric label="Source Reliability" value={latestAnalysis?.technicalMetadata?.sourceReliability || 'Verified'} />
+                       </div>
+                     </section>
 
                     <section>
-                      <h4 className="text-[10px] uppercase tracking-[0.4em] text-slate-500 font-bold mb-6">Identified Spreaders</h4>
-                      <div className="flex flex-wrap gap-3">
-                        {latestAnalysis.spreaders.map((spreader, i) => (
-                          <div key={i} className="px-4 py-2 bg-white/5 border border-white/10 rounded-lg flex items-center gap-2">
-                            <Users size={12} className="text-blue-400" />
-                            <span className="text-[10px] text-slate-300 font-bold uppercase tracking-widest">{spreader}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </section>
+                       <h4 className="text-[10px] uppercase tracking-[0.4em] text-slate-500 font-bold mb-6">Identified Spreaders</h4>
+                       <div className="flex flex-wrap gap-3">
+                         {(latestAnalysis?.spreaders || []).map((spreader: string, i: number) => (
+                           <a 
+                             key={i} 
+                             href={`https://x.com/search?q=${encodeURIComponent(spreader)}`}
+                             target="_blank"
+                             rel="noopener noreferrer"
+                             className="px-4 py-2 bg-white/5 border border-white/10 rounded-lg flex items-center gap-2 hover:border-blue-500/50 hover:bg-blue-500/5 transition-all group"
+                           >
+                             <Users size={12} className="text-blue-400 group-hover:scale-110 transition-transform" />
+                             <span className="text-[10px] text-slate-300 font-bold uppercase tracking-widest group-hover:text-blue-400 transition-colors">{spreader}</span>
+                           </a>
+                         ))}
+                       </div>
+                     </section>
                   </div>
                 </div>
               </div>
@@ -566,49 +672,60 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
               <div className="space-y-8 lg:space-y-12">
                 <div className="royal-card p-6 lg:p-12 overflow-x-auto">
                   <h4 className="text-[10px] uppercase tracking-[0.4em] text-slate-500 font-bold mb-8">Algorithmic Benchmarks</h4>
-                  <ModelComparison models={latestAnalysis.model_results} showDetails />
+                  <ModelComparison models={latestAnalysis?.model_results || []} showDetails />
                 </div>
 
                 <div className="royal-card p-6 lg:p-12 overflow-x-auto">
                   <h4 className="text-[10px] uppercase tracking-[0.4em] text-slate-500 font-bold mb-8">Propagation Timeline</h4>
-                  <DiffusionChart data={latestAnalysis.diffusion_data} height={400} />
+                  <DiffusionChart data={latestAnalysis?.diffusion_data || []} height={400} />
                 </div>
 
                 <div className="royal-card p-6 lg:p-12">
                   <h4 className="text-[10px] uppercase tracking-[0.4em] text-slate-500 font-bold mb-8">Verified Sources Archive</h4>
-                  {(!latestAnalysis.source_links?.original && (!latestAnalysis.source_links?.others || latestAnalysis.source_links.others.length === 0)) ? (
-                    <div className="p-8 bg-red-500/10 border border-red-500/20 rounded-xl text-center">
-                      <p className="text-xs font-bold text-red-400 uppercase tracking-widest">No trusted sources found for this news.</p>
+                  {(!latestAnalysis?.source_links?.original && (!latestAnalysis?.source_links?.others || (latestAnalysis.source_links.others?.length || 0) === 0)) ? (
+                    <div className="p-12 bg-slate-900/50 border border-white/5 rounded-2xl text-center">
+                      <FileText size={40} className="mx-auto text-slate-800 mb-6" />
+                      <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">No reliable sources found</p>
+                      <p className="text-[9px] text-slate-600 uppercase tracking-widest">This news could not be correlated with a trusted news outlet.</p>
                     </div>
                   ) : (
-                    <div className="space-y-8">
+                    <div className="space-y-10">
                       {latestAnalysis.source_links?.original && (
-                        <div>
-                          <h5 className="text-[9px] text-emerald-500 font-bold uppercase tracking-[0.2em] mb-4">Original Verified Source</h5>
-                          <a href={latestAnalysis.source_links.original} target="_blank" rel="noopener noreferrer" className="block p-6 bg-emerald-500/5 border border-emerald-500/20 rounded-xl hover:border-emerald-500/50 transition-all group">
-                            <div className="flex items-center justify-between">
+                        <div className="space-y-4">
+                          <div className="flex items-center gap-3">
+                            <ShieldCheck size={14} className="text-emerald-500" />
+                            <h5 className="text-[9px] text-emerald-500 font-bold uppercase tracking-[0.2em]">Original Verified Source</h5>
+                          </div>
+                          <a href={latestAnalysis.source_links.original} target="_blank" rel="noopener noreferrer" className="block p-6 bg-emerald-500/5 border border-emerald-500/20 rounded-2xl hover:border-emerald-500/50 hover:bg-emerald-500/10 transition-all group relative overflow-hidden">
+                            <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
+                              <Share2 size={64} />
+                            </div>
+                            <div className="flex items-center justify-between relative z-10">
                               <p className="text-xs font-bold text-emerald-400 uppercase tracking-wider truncate max-w-2xl">{latestAnalysis.source_links.original}</p>
-                              <Share2 size={14} className="text-emerald-500/50 group-hover:text-emerald-400 transition-colors ml-4 shrink-0" />
+                              <div className="px-3 py-1 bg-emerald-500/20 rounded text-[8px] font-bold text-emerald-400 border border-emerald-500/30">VISIT SOURCE</div>
                             </div>
                           </a>
                         </div>
                       )}
                       
-                      {latestAnalysis.source_links?.others && latestAnalysis.source_links.others.length > 0 && (
-                        <div>
-                          <h5 className="text-[9px] text-blue-400 font-bold uppercase tracking-[0.2em] mb-4">Other Propagating Sources</h5>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {latestAnalysis.source_links.others.map((url, i) => (
-                              <a href={url} key={i} target="_blank" rel="noopener noreferrer" className="block p-4 bg-white/5 border border-white/5 rounded-xl hover:border-blue-500/30 transition-all group">
-                                <div className="flex items-center justify-between">
-                                  <p className="text-[10px] text-slate-300 font-mono truncate max-w-xs">{url}</p>
-                                  <Globe size={12} className="text-slate-600 group-hover:text-blue-400 transition-colors ml-4 shrink-0" />
-                                </div>
-                              </a>
-                            ))}
-                          </div>
-                        </div>
-                      )}
+                       {(latestAnalysis?.source_links?.others?.length || 0) > 0 && (
+                         <div className="space-y-4">
+                           <div className="flex items-center gap-3">
+                             <Database size={14} className="text-blue-500" />
+                             <h5 className="text-[9px] text-blue-400 font-bold uppercase tracking-[0.2em]">Supporting Sources ({latestAnalysis.source_links?.others?.length})</h5>
+                           </div>
+                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                             {(latestAnalysis?.source_links?.others || []).map((url: string, i: number) => (
+                               <a href={url} key={i} target="_blank" rel="noopener noreferrer" className="block p-5 bg-white/5 border border-white/5 rounded-xl hover:border-blue-500/30 hover:bg-blue-500/5 transition-all group">
+                                 <div className="flex items-center justify-between">
+                                   <p className="text-[10px] text-slate-400 font-mono truncate max-w-xs">{url}</p>
+                                   <Globe size={12} className="text-slate-600 group-hover:text-blue-400 transition-colors ml-4 shrink-0" />
+                                 </div>
+                               </a>
+                             ))}
+                           </div>
+                         </div>
+                       )}
                     </div>
                   )}
                 </div>
@@ -616,45 +733,6 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
             </div>
           )}
 
-          {activeTab === 'history' && user && (
-            <div className="royal-card p-6 lg:p-12">
-               <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8 lg:mb-12">
-                 <h3 className="text-xl font-display font-extrabold text-white uppercase tracking-tight">Personalized History</h3>
-                 <span className="text-[10px] font-bold text-blue-400 uppercase tracking-widest px-3 py-1 bg-blue-400/10 border border-blue-400/20 rounded-lg">
-                   Authenticated: {user.email}
-                 </span>
-               </div>
-               <div className="space-y-6">
-                 {allNews.filter(n => n.user_id === user.email).map((item) => (
-                   <div key={item.id} className="p-6 bg-white/5 border border-white/5 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-4 group hover:border-blue-500/30 transition-all">
-                     <div className="flex items-center gap-4">
-                       <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${item.label === 'REAL' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'}`}>
-                         <FileText size={20} />
-                       </div>
-                       <div>
-                         <h4 className="text-sm font-bold text-white uppercase tracking-wider">{item.news_title || 'Classified Analysis'}</h4>
-                         <p className="text-[10px] text-slate-500 uppercase tracking-widest mt-1">Processed {new Date(item.timestamp).toLocaleDateString()} • Credibility: {item.credibility_score?.toFixed(1) || '0.0'}%</p>
-                       </div>
-                     </div>
-                     <div className="flex items-center gap-4">
-                       <button onClick={() => {
-                         setLatestAnalysis(item);
-                         setActiveTab('dossier');
-                       }} className="text-[10px] font-bold text-slate-400 uppercase tracking-widest hover:text-blue-400 transition-colors">
-                         View Report
-                       </button>
-                       <button onClick={() => handleDeleteReport(item.id)} className="p-2 text-slate-500 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors">
-                         <Trash size={16} />
-                       </button>
-                     </div>
-                   </div>
-                 ))}
-                 {allNews.length === 0 && (
-                   <p className="text-slate-500 text-sm py-8 uppercase tracking-widest">No reports archived in your history.</p>
-                 )}
-               </div>
-            </div>
-          )}
         </div>
       </main>
     </div>

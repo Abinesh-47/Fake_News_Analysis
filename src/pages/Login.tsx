@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Shield, Mail, Lock, ArrowRight } from 'lucide-react';
 import { motion } from 'motion/react';
 
-export default function Login({ onLogin }: { onLogin: (user: { email: string }) => void }) {
+export default function Login({ onLogin }: { onLogin: (user: { email: string }, token: string) => void }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -19,7 +19,7 @@ export default function Login({ onLogin }: { onLogin: (user: { email: string }) 
       });
       const data = await res.json();
       if (res.ok) {
-        onLogin(data.user);
+        onLogin(data.user, data.token);
         navigate('/');
       } else {
         setError(data.error);

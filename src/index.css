@@ -52,3 +52,31 @@ body {
 .preserve-3d {
   transform-style: preserve-3d;
 }
+
+/* Logo Styles */
+.logo-container {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.logo {
+  height: 40px;
+  width: auto;
+  object-fit: contain;
+}
+
+.logo-text {
+  font-size: 18px;
+  font-weight: bold;
+}
+
+@media (max-width: 768px) {
+  .logo {
+    height: 30px;
+  }
+
+  .logo-text {
+    font-size: 14px;
+  }
+}
