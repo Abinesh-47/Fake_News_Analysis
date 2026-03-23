@@ -18,6 +18,13 @@ import Tesseract from 'tesseract.js';
 const require = createRequire(import.meta.url);
 const pdf = require('pdf-parse');
 
+// Self-healing environment variable normalization
+function normalizeEnv(key: string | undefined): string {
+  if (!key) return "";
+  // Strip "KEY_NAME=" prefixes and accidental newlines/spaces
+  return key.replace(/^[A-Z_]+=/, "").trim();
+}
+
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
@@ -31,7 +38,7 @@ function log(msg: string) {
 }
 
 const JWT_SECRET = process.env.JWT_SECRET || 'big-data-secret-key';
-const GNEWS_API_KEY = process.env.GNEWS_API_KEY || "";
+const GNEWS_API_KEY = normalizeEnv(process.env.GNEWS_API_KEY); // Applied normalizeEnv
 const UPLOADS_DIR = path.join(__dirname, 'uploads');
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
@@ -39,8 +46,10 @@ const upload = multer({ dest: UPLOADS_DIR });
 
 // --- ANALYTIC INTEGRITY CORE V7.2 ---
 
-const key = (process.env.OPENAI_API_KEY || "").trim();
-const openai = new OpenAI({ baseURL: "https://openrouter.ai/api/v1", apiKey: key || 'sk-or-v1-placeholder' });
+const openai = new OpenAI({
+  apiKey: normalizeEnv(process.env.OPENAI_API_KEY), // Applied normalizeEnv
+  baseURL: "https://openrouter.ai/api/v1"
+});
 
 function parseAiJson(content: string) {
   try {
@@ -73,11 +82,12 @@ Return JSON: {"queries": ["variation 1", "variation 2", "variation 3", "variatio
 
 async function fetchSpreaders(query: string) {
   try {
+    const apiKey = normalizeEnv(process.env.SERPAPI_KEY);
     const response = await axios.get("https://serpapi.com/search.json", {
       params: {
         engine: "google",
         q: query,
-        api_key: process.env.SERPAPI_KEY,
+        api_key: apiKey,
         num: 5
       }
     });
@@ -131,6 +141,9 @@ async function findNewsSources(text: string, intent: any) {
     if (!q) continue;
     try {
       await Sleep(500); // Prevent API rate limit triggers
+      // The original GNEWS_API_KEY is already normalized globally.
+      // The provided diff had a local re-declaration and a different URL structure.
+      // Sticking to the original URL structure and the globally normalized key.
       const resp = await axios.get(`https://gnews.io/api/v4/search?q=${encodeURIComponent(q)}&lang=en&max=10&apikey=${GNEWS_API_KEY}`, { timeout: 8000 });
       if (resp.data.articles) results.push(...resp.data.articles);
     } catch (err: any) { log(`[SEARCH ERROR] Query [${q}] failed: ${err.message}`); }
@@ -416,25 +429,39 @@ async function startServer() {
       const original = realSources[0] || null;
       const supporting = realSources.slice(1);
 
-      const sourcesContext = realSources.length > 0 
-        ? "VERIFIED SOURCES CONTENT:\n" + realSources.slice(0, 5).map(s => `Title: ${s.title}\nSource: ${s.source}\nSnippet: ${s.description}`).join("\n\n")
-        : "No verified sources found in current news database.";
+      const contextSources = verifiedSources.length > 0 ? verifiedSources : spreaders;
+      const newsContext = realSources.length > 0 
+        ? "NEWS ARTICLES:\n" + realSources.slice(0, 3).map(s => `Title: ${s.title}\nSource: ${s.source}\nSnippet: ${s.description}`).join("\n\n")
+        : "";
+      const searchContext = contextSources.length > 0
+        ? "SEARCH RESULTS:\n" + contextSources.map(s => `${s.name}: ${s.snippet || ""}`).join("\n")
+        : "";
+      const fullContext = `${newsContext}\n\n${searchContext}`;
+
+      const aiPrompt = `You are a forensic fact-checking system. 
+INPUT CLAIM: "${text}"
+EVIDENCE FROM SEARCH & NEWS:
+${fullContext}
+INSTRUCTIONS:
+1. Analysis: Compare the claim against the provided evidence.
+2. Verdict: Decide if the claim is REAL or FAKE.
+3. True Analysis: Provide a detailed, source-based explanation (mention that the analysis is as of current date 2026).
+4. Corrected Values: If the claim contains incorrect numbers or dates, identify the correct values from the sources.
+RETURN JSON ONLY:
+{
+  "label": "REAL" | "FAKE",
+  "confidence": number (0-100),
+  "context": "Short summary of the forensic situation",
+  "true_analysis": "Detailed source-based analysis",
+  "truthConfidence": number (0-100),
+  "correctedValues": [{"old": "string", "new": "string"}]
+}`;
 
       const completion = await openai.chat.completions.create({
         model: 'openai/gpt-4o-mini',
-        messages: [
-          { role: 'system', content: `Forensic Veracity & Truth Reconstruction. 
-Return JSON: {
-  "label": "REAL" | "FAKE", 
-  "confidence": number, 
-  "context": "string", 
-  "trueAnalysis": "string",
-  "truthConfidence": number (0-100),
-  "correctedValues": [{"old": "string", "new": "string"}]
-}` },
-          { role: 'user', content: `INPUT CLAIM: ${text.substring(0, 1500)}\n\n${sourcesContext}` }
-        ]
-      }, { timeout: 15000 });
+        messages: [{ role: 'system', content: "You output JSON only." }, { role: 'user', content: aiPrompt }],
+        response_format: { type: "json_object" }
+      }, { timeout: 20000 });
       const aiResult = parseAiJson(completion.choices[0]?.message?.content || '{}');
 
       let diffusionData = [];
@@ -454,71 +481,26 @@ Return JSON: {
         diffusionData = projectSocialSignal(text);
       }
 
-      const final_identified_spreaders = spreaders.length > 0 
-        ? spreaders.map(s => ({ name: s.name, url: s.url }))
-        : [{ name: "No sources found", url: "#" }];
-
+      const final_identified_spreaders = spreaders.map(s => ({ name: s.name, url: s.url }));
       const final_verified_sources = verifiedSources.length > 0
         ? verifiedSources.map(s => ({ name: s.name, url: s.url }))
-        : spreaders.map(s => ({ name: s.name, url: s.url })); // Fallback to spreaders
+        : final_identified_spreaders;
 
       // --- PHASE 3: TRUE ANALYSIS ENGINE ---
-      const contextSources = verifiedSources.length > 0 ? verifiedSources : spreaders;
-      let finalTrueAnalysis = "No verified data available";
-
-      if (contextSources.length > 0) {
-        const contextText = contextSources.map(s => `${s.name}: ${s.snippet || ""}`).join("\n");
-        const aiPrompt = `You are a fact-checking AI.
-
-Claim:
-"${text}"
-
-Sources:
-${contextText}
-
-Instructions:
-1. Decide if claim is TRUE or FALSE
-2. Explain using ONLY given sources
-3. If numbers differ, correct them
-4. Do NOT assume anything
-5. If no reliable sources are available, provide a cautious explanation based on general knowledge and clearly mention uncertainty.
-
-Output format:
-
-Verdict: TRUE or FALSE
-
-True Analysis:
-<clear explanation based on sources>`;
-
-        const aiResponse = await openai.chat.completions.create({
-          model: 'openai/gpt-4o-mini',
-          messages: [{ role: 'user', content: aiPrompt }]
-        }, { timeout: 15000 });
-        
-        finalTrueAnalysis = aiResponse.choices[0].message.content || "No verified data available";
-      }
-
-      const finalLabel = aiResult.label || (realSources.length > 0 ? "REAL" : "UNCERTAIN");
-      const finalConfidence = aiResult.confidence || (realSources.length > 0 ? 80 : 50);
-
-      const trueAnalysis = (realSources.length === 0) 
-          ? "No reliable sources found" 
-          : (aiResult.trueAnalysis || "Insufficient verified data");
-
       const analysisResult = {
-        label: finalLabel,
-        confidence: Math.min(finalConfidence, 100),
+        label: aiResult.label || (realSources.length > 0 ? "REAL" : "FAKE"),
+        confidence: aiResult.confidence || 80,
         context: aiResult.context || "Forensic analysis complete.",
-        true_analysis: finalTrueAnalysis,
+        true_analysis: aiResult.true_analysis || "No verified data available",
         limited_data: (noSpreaders && spreaders[0].url === "#"),
-        truthConfidence: (realSources.length === 0 || finalTrueAnalysis === "No verified data available") ? 0 : (aiResult.truthConfidence || 85),
-        correctedValues: (trueAnalysis === "Insufficient verified data" || realSources.length === 0) ? [] : (aiResult.correctedValues || []),
+        truthConfidence: aiResult.truthConfidence || 0,
+        correctedValues: aiResult.correctedValues || [],
         sources: realSources.map(s => ({ title: s.title, url: s.url, source: s.source, description: s.description })),
         source_links: { original: original?.url || null, others: supporting.map(s => s.url) },
         diffusion_data: diffusionData,
         spreaders: final_identified_spreaders,
         verified_sources: final_verified_sources,
-        model_results: getModels(text, finalLabel, finalConfidence),
+        model_results: getModels(text, aiResult.label || "FAKE", aiResult.confidence || 80),
         technicalMetadata: { sourceCount: realSources.length, botActivity: "Low (Organic)", sourceReliability: realSources.length > 0 ? "High" : "Projected" }
       };
 
