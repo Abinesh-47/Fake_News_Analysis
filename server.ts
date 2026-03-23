@@ -71,6 +71,31 @@ Return JSON: {"queries": ["variation 1", "variation 2", "variation 3", "variatio
   }
 }
 
+async function fetchSpreaders(query: string) {
+  try {
+    const response = await axios.get("https://serpapi.com/search.json", {
+      params: {
+        engine: "google",
+        q: query,
+        api_key: process.env.SERPAPI_KEY,
+        num: 5
+      }
+    });
+
+    const results = response.data.organic_results || [];
+
+    return results.map((item: any) => ({
+      name: item.source || item.title,
+      url: item.link,
+      snippet: item.snippet
+    }));
+
+  } catch (error) {
+    console.error("Spreaders fetch error:", error);
+    return [];
+  }
+}
+
 function calculateSimilarity(text1: string, text2: string): number {
   const words1 = new Set(text1.toLowerCase().match(/\w+/g) || []);
   const words2 = new Set(text2.toLowerCase().match(/\w+/g) || []);
@@ -136,6 +161,13 @@ async function findNewsSources(text: string, intent: any) {
   return filtered.slice(0, 10);
 }
 
+function simplifyQuery(input: string) {
+  return input
+    .replace(/[0-9]+/g, "")     // remove numbers
+    .replace(/[^a-zA-Z ]/g, "") // remove special chars
+    .trim();
+}
+
 function projectSocialSignal(title: string) {
   const seed = (title || "").length;
   const data = [];
@@ -188,6 +220,27 @@ function getModels(text: string, aiLabel?: string, aiConfidence?: number) {
       status: 'OPTIMIZED' 
     }
   ];
+}
+
+const TRUSTED_SOURCES = [
+  "bbc.com",
+  "reuters.com",
+  "apnews.com",
+  "thehindu.com",
+  "indianexpress.com",
+  "hindustantimes.com",
+  "timesofindia.indiatimes.com",
+  "ndtv.com",
+  "cnn.com",
+  "aljazeera.com"
+];
+
+function filterVerifiedSources(spreaders: any[]) {
+  return spreaders.filter(s =>
+    TRUSTED_SOURCES.some(domain =>
+      s.url.toLowerCase().includes(domain.toLowerCase())
+    )
+  );
 }
 
 async function startServer() {
@@ -335,6 +388,31 @@ async function startServer() {
 
       const intent = await extractSearchKeywords(text);
       const realSources = await findNewsSources(text, intent);
+      
+      let spreaders = await fetchSpreaders(text);
+      const noSpreaders = !spreaders || spreaders.length === 0;
+
+      if (noSpreaders) {
+        log(`[FALLBACK] Retrying with simplified query...`);
+        const fallbackQuery = simplifyQuery(text);
+        if (fallbackQuery && fallbackQuery !== text) {
+          spreaders = await fetchSpreaders(fallbackQuery);
+        }
+      }
+
+      // Minimum Result Guarantee
+      if (!spreaders || spreaders.length === 0) {
+        spreaders = [
+          {
+            name: "General news context (no direct match found)",
+            url: "#",
+            snippet: "No direct articles found, using general reasoning"
+          }
+        ];
+      }
+
+      const verifiedSources = filterVerifiedSources(spreaders);
+      
       const original = realSources[0] || null;
       const supporting = realSources.slice(1);
 
@@ -376,11 +454,49 @@ Return JSON: {
         diffusionData = projectSocialSignal(text);
       }
 
-      const spreaderProtocols = ["@intel_node_", "@truth_sentinel_", "@veracity_hub_", "@media_pulse_"];
-      const dynamicSpreaders = [
-        ...realSources.slice(0, 2).map(s => `@${s.source.toLowerCase().replace(/\s+/g, '_')}_internal`),
-        ...spreaderProtocols.map(p => `${p}${Math.floor(Math.random() * 999)}`)
-      ].slice(0, 5);
+      const final_identified_spreaders = spreaders.length > 0 
+        ? spreaders.map(s => ({ name: s.name, url: s.url }))
+        : [{ name: "No sources found", url: "#" }];
+
+      const final_verified_sources = verifiedSources.length > 0
+        ? verifiedSources.map(s => ({ name: s.name, url: s.url }))
+        : spreaders.map(s => ({ name: s.name, url: s.url })); // Fallback to spreaders
+
+      // --- PHASE 3: TRUE ANALYSIS ENGINE ---
+      const contextSources = verifiedSources.length > 0 ? verifiedSources : spreaders;
+      let finalTrueAnalysis = "No verified data available";
+
+      if (contextSources.length > 0) {
+        const contextText = contextSources.map(s => `${s.name}: ${s.snippet || ""}`).join("\n");
+        const aiPrompt = `You are a fact-checking AI.
+
+Claim:
+"${text}"
+
+Sources:
+${contextText}
+
+Instructions:
+1. Decide if claim is TRUE or FALSE
+2. Explain using ONLY given sources
+3. If numbers differ, correct them
+4. Do NOT assume anything
+5. If no reliable sources are available, provide a cautious explanation based on general knowledge and clearly mention uncertainty.
+
+Output format:
+
+Verdict: TRUE or FALSE
+
+True Analysis:
+<clear explanation based on sources>`;
+
+        const aiResponse = await openai.chat.completions.create({
+          model: 'openai/gpt-4o-mini',
+          messages: [{ role: 'user', content: aiPrompt }]
+        }, { timeout: 15000 });
+        
+        finalTrueAnalysis = aiResponse.choices[0].message.content || "No verified data available";
+      }
 
       const finalLabel = aiResult.label || (realSources.length > 0 ? "REAL" : "UNCERTAIN");
       const finalConfidence = aiResult.confidence || (realSources.length > 0 ? 80 : 50);
@@ -393,13 +509,15 @@ Return JSON: {
         label: finalLabel,
         confidence: Math.min(finalConfidence, 100),
         context: aiResult.context || "Forensic analysis complete.",
-        trueAnalysis: trueAnalysis,
-        truthConfidence: (realSources.length === 0 || trueAnalysis === "Insufficient verified data") ? 0 : (aiResult.truthConfidence || 85),
+        true_analysis: finalTrueAnalysis,
+        limited_data: (noSpreaders && spreaders[0].url === "#"),
+        truthConfidence: (realSources.length === 0 || finalTrueAnalysis === "No verified data available") ? 0 : (aiResult.truthConfidence || 85),
         correctedValues: (trueAnalysis === "Insufficient verified data" || realSources.length === 0) ? [] : (aiResult.correctedValues || []),
         sources: realSources.map(s => ({ title: s.title, url: s.url, source: s.source, description: s.description })),
         source_links: { original: original?.url || null, others: supporting.map(s => s.url) },
         diffusion_data: diffusionData,
-        spreaders: dynamicSpreaders,
+        spreaders: final_identified_spreaders,
+        verified_sources: final_verified_sources,
         model_results: getModels(text, finalLabel, finalConfidence),
         technicalMetadata: { sourceCount: realSources.length, botActivity: "Low (Organic)", sourceReliability: realSources.length > 0 ? "High" : "Projected" }
       };

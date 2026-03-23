@@ -27,9 +27,10 @@ interface AnalysisResult {
   confidence: number;
   context: string;
   trueAnalysis?: string;
+  true_analysis?: string;
   truthConfidence?: number;
   correctedValues?: { old: string; new: string }[];
-  spreaders: string[];
+  spreaders: { name: string; url: string }[];
   location: string;
   technicalMetadata: {
     propagationPattern: string;
@@ -40,7 +41,9 @@ interface AnalysisResult {
   sources: { title: string; url: string; source: string; description?: string }[];
   model_results?: any[];
   source_links?: { original?: string, others?: string[] };
+  verified_sources?: { name: string; url: string }[];
   diffusion_data?: any[];
+  limited_data?: boolean;
 }
 
 export default function Dashboard({ user, onLogout }: { user: { email: string } | null, onLogout: () => void }) {
@@ -437,7 +440,8 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
                           label: analysis.label as 'REAL' | 'FAKE',
                           confidence: analysis.confidence || item.credibility_score,
                           context: analysis.context || item.text || item.inputText,
-                          spreaders: analysis.spreaders || ["@archive_node", "@historical_seq"],
+                          true_analysis: analysis.true_analysis || analysis.trueAnalysis,
+                          spreaders: analysis.spreaders || [{ name: "@archive_node", url: "#" }, { name: "@historical_seq", url: "#" }],
                           location: analysis.location || 'Archived Region',
                           technicalMetadata: analysis.technicalMetadata || {
                             propagationPattern: 'Historical Diffusion',
@@ -622,6 +626,15 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
                   </div>
                 </div>
 
+                {latestAnalysis?.limited_data && (
+                  <div className="mb-8 p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-center gap-3">
+                    <ShieldAlert className="text-amber-500" size={18} />
+                    <p className="text-[10px] text-amber-500 font-bold uppercase tracking-widest">
+                      Limited data available — analysis based on best available information
+                    </p>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12">
                   <div className="space-y-8 lg:space-y-12">
                     <section>
@@ -647,11 +660,11 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
                               : "bg-gradient-to-r from-blue-600/20 to-indigo-600/20"
                           }`}></div>
                           <div className={`relative text-sm text-slate-200 leading-relaxed bg-[#0F172A]/80 p-8 rounded-xl border shadow-2xl ${
-                            (latestAnalysis?.trueAnalysis === "No reliable sources found" || latestAnalysis?.trueAnalysis === "Insufficient verified data")
+                            (latestAnalysis?.true_analysis === "No verified data available" || latestAnalysis?.trueAnalysis === "No reliable sources found" || latestAnalysis?.trueAnalysis === "Insufficient verified data")
                               ? "border-white/5 opacity-60"
                               : "border-blue-500/20"
                           }`}>
-                            {latestAnalysis?.trueAnalysis || 'Searching verified news archives for factual grounding...'}
+                            {latestAnalysis?.true_analysis || latestAnalysis?.trueAnalysis || 'Searching verified news archives for factual grounding...'}
                             
                             {latestAnalysis?.correctedValues && latestAnalysis.correctedValues.length > 0 && (
                               <div className="mt-6 pt-6 border-t border-white/5 space-y-3">
@@ -691,19 +704,21 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
                        </div>
                      </section>
 
-                    <section>
+                     <section>
                        <h4 className="text-[10px] uppercase tracking-[0.4em] text-slate-500 font-bold mb-6">Identified Spreaders</h4>
                        <div className="flex flex-wrap gap-3">
-                         {(latestAnalysis?.spreaders || []).map((spreader: string, i: number) => (
+                         {(latestAnalysis?.spreaders || []).map((s, i) => (
                            <a 
                              key={i} 
-                             href={`https://x.com/search?q=${encodeURIComponent(spreader)}`}
+                             href={s.url}
                              target="_blank"
                              rel="noopener noreferrer"
                              className="px-4 py-2 bg-white/5 border border-white/10 rounded-lg flex items-center gap-2 hover:border-blue-500/50 hover:bg-blue-500/5 transition-all group"
                            >
                              <Users size={12} className="text-blue-400 group-hover:scale-110 transition-transform" />
-                             <span className="text-[10px] text-slate-300 font-bold uppercase tracking-widest group-hover:text-blue-400 transition-colors">{spreader}</span>
+                             <span className="text-[10px] text-slate-300 font-bold uppercase tracking-widest group-hover:text-blue-400 transition-colors">
+                               {s.name}
+                             </span>
                            </a>
                          ))}
                        </div>
@@ -724,51 +739,36 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
                 </div>
 
                 <div className="royal-card p-6 lg:p-12">
-                  <h4 className="text-[10px] uppercase tracking-[0.4em] text-slate-500 font-bold mb-8">Verified Sources Archive</h4>
-                  {(!latestAnalysis?.source_links?.original && (!latestAnalysis?.source_links?.others || (latestAnalysis.source_links.others?.length || 0) === 0)) ? (
+                  <div className="flex items-center justify-between mb-8">
+                    <h4 className="text-[10px] uppercase tracking-[0.4em] text-slate-500 font-bold">Verified Sources Archive</h4>
+                    <span className="px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded text-[8px] font-bold text-emerald-400 tracking-widest">VERIFIED BY TRUSTED SOURCES</span>
+                  </div>
+                  
+                  {(!latestAnalysis?.verified_sources || latestAnalysis.verified_sources.length === 0 || latestAnalysis.verified_sources[0].name === "No trusted sources found") ? (
                     <div className="p-12 bg-slate-900/50 border border-white/5 rounded-2xl text-center">
                       <FileText size={40} className="mx-auto text-slate-800 mb-6" />
-                      <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">No reliable sources found</p>
-                      <p className="text-[9px] text-slate-600 uppercase tracking-widest">This news could not be correlated with a trusted news outlet.</p>
+                      <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">No trusted sources found</p>
+                      <p className="text-[9px] text-slate-600 uppercase tracking-widest">This news could not be correlated with a trusted news outlet from our registry.</p>
                     </div>
                   ) : (
-                    <div className="space-y-10">
-                      {latestAnalysis.source_links?.original && (
-                        <div className="space-y-4">
-                          <div className="flex items-center gap-3">
-                            <ShieldCheck size={14} className="text-emerald-500" />
-                            <h5 className="text-[9px] text-emerald-500 font-bold uppercase tracking-[0.2em]">Original Verified Source</h5>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {latestAnalysis.verified_sources.map((s, i) => (
+                        <a 
+                          key={i} 
+                          href={s.url} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="block p-5 bg-emerald-500/5 border border-emerald-500/10 rounded-xl hover:border-emerald-500/30 hover:bg-emerald-500/10 transition-all group"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <ShieldCheck size={14} className="text-emerald-500" />
+                              <span className="text-[10px] text-slate-300 font-bold uppercase tracking-widest group-hover:text-emerald-400 transition-colors">{s.name}</span>
+                            </div>
+                            <Globe size={12} className="text-slate-600 group-hover:text-emerald-400 transition-colors" />
                           </div>
-                          <a href={latestAnalysis.source_links.original} target="_blank" rel="noopener noreferrer" className="block p-6 bg-emerald-500/5 border border-emerald-500/20 rounded-2xl hover:border-emerald-500/50 hover:bg-emerald-500/10 transition-all group relative overflow-hidden">
-                            <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
-                              <Share2 size={64} />
-                            </div>
-                            <div className="flex items-center justify-between relative z-10">
-                              <p className="text-xs font-bold text-emerald-400 uppercase tracking-wider truncate max-w-2xl">{latestAnalysis.source_links.original}</p>
-                              <div className="px-3 py-1 bg-emerald-500/20 rounded text-[8px] font-bold text-emerald-400 border border-emerald-500/30">VISIT SOURCE</div>
-                            </div>
-                          </a>
-                        </div>
-                      )}
-                      
-                       {(latestAnalysis?.source_links?.others?.length || 0) > 0 && (
-                         <div className="space-y-4">
-                           <div className="flex items-center gap-3">
-                             <Database size={14} className="text-blue-500" />
-                             <h5 className="text-[9px] text-blue-400 font-bold uppercase tracking-[0.2em]">Supporting Sources ({latestAnalysis.source_links?.others?.length})</h5>
-                           </div>
-                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                             {(latestAnalysis?.source_links?.others || []).map((url: string, i: number) => (
-                               <a href={url} key={i} target="_blank" rel="noopener noreferrer" className="block p-5 bg-white/5 border border-white/5 rounded-xl hover:border-blue-500/30 hover:bg-blue-500/5 transition-all group">
-                                 <div className="flex items-center justify-between">
-                                   <p className="text-[10px] text-slate-400 font-mono truncate max-w-xs">{url}</p>
-                                   <Globe size={12} className="text-slate-600 group-hover:text-blue-400 transition-colors ml-4 shrink-0" />
-                                 </div>
-                               </a>
-                             ))}
-                           </div>
-                         </div>
-                       )}
+                        </a>
+                      ))}
                     </div>
                   )}
                 </div>
