@@ -14,6 +14,7 @@ interface ChatInterfaceProps {
 }
 
 export default function ChatInterface({ onAnalysisComplete }: ChatInterfaceProps) {
+  const apiBase = import.meta.env.VITE_API_URL || '';
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -58,7 +59,7 @@ export default function ChatInterface({ onAnalysisComplete }: ChatInterfaceProps
       }
 
       const token = localStorage.getItem('token');
-      const res = await fetch("/api/upload", {
+      const res = await fetch(`${apiBase}/api/upload`, {
         method: "POST",
         headers: token ? { 'Authorization': `Bearer ${token}` } : {},
         body: formData
@@ -78,7 +79,7 @@ export default function ChatInterface({ onAnalysisComplete }: ChatInterfaceProps
         
         let formattedMsg = `
 [EXTRACTED CONTEXT] 
-${result.data.substring(0, 500)}${result.data.length > 500 ? '...' : ''}
+${result.extractedText ? result.extractedText.substring(0, 500) : 'No text extracted'}${result.extractedText && result.extractedText.length > 500 ? '...' : ''}
 
 [SENTINEL ANALYSIS]
 # VERDICT: ${analysis.label} VERDICT

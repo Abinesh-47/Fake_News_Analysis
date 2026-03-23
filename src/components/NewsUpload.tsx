@@ -20,6 +20,7 @@ interface AnalysisResult {
 }
 
 export default function NewsUpload({ onAnalysisComplete, user }: { onAnalysisComplete?: (result: AnalysisResult) => void, user?: { email: string } | null }) {
+  const apiBase = import.meta.env.VITE_API_URL || '';
   const [text, setText] = useState('');
   const [analyzing, setAnalyzing] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
@@ -36,7 +37,7 @@ export default function NewsUpload({ onAnalysisComplete, user }: { onAnalysisCom
     const token = localStorage.getItem('token');
 
     try {
-      const response = await fetch('/api/ai/analyze', {
+      const response = await fetch(`${apiBase}/api/analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text }),
@@ -56,7 +57,7 @@ export default function NewsUpload({ onAnalysisComplete, user }: { onAnalysisCom
 
       if (userObj && token) {
         // Logged in: Permanent DB storage
-        await fetch('/api/reports/save', {
+        await fetch(`${apiBase}/api/save-report`, {
           method: 'POST',
           headers: { 
             'Content-Type': 'application/json',

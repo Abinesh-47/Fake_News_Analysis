@@ -44,6 +44,7 @@ interface AnalysisResult {
 }
 
 export default function Dashboard({ user, onLogout }: { user: { email: string } | null, onLogout: () => void }) {
+  const apiBase = import.meta.env.VITE_API_URL || '';
   const [summary, setSummary] = useState<Summary | null>(null);
   const [activeTab, setActiveTab] = useState('overview');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -64,14 +65,14 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
       // User says "Guest ... no DB usage". Summary uses DB.
       // So if guest, maybe show mock numbers or zero.
       if (user && token) {
-        fetch('/api/analytics/summary', {
+        fetch(`${apiBase}/api/analytics/summary`, {
           headers: { 'Authorization': `Bearer ${token}` }
         })
           .then(res => res.json())
           .then(setSummary)
           .catch(err => console.error('Summary fetch error:', err));
         
-        fetch('/api/reports', {
+        fetch(`${apiBase}/api/reports`, {
           headers: { 'Authorization': `Bearer ${token}` }
         })
           .then(res => res.json())
@@ -119,7 +120,7 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
     // Refresh archive
     if (user) {
       const token = localStorage.getItem('token');
-      fetch('/api/reports', {
+      fetch(`${apiBase}/api/reports`, {
         headers: { 'Authorization': `Bearer ${token}` }
       })
         .then(res => res.json())
@@ -139,7 +140,7 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
       try {
         if (user) {
           const token = localStorage.getItem('token');
-          await fetch(`/api/report/${id}`, { 
+          await fetch(`${apiBase}/api/report/${id}`, { 
             method: 'DELETE',
             headers: { 'Authorization': `Bearer ${token}` }
           });
@@ -395,7 +396,7 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
                     onClick={async () => {
                       if (window.confirm('Wipe all intelligence records from the mainframe?')) {
                         const token = localStorage.getItem('token');
-                        await fetch('/api/reports', { 
+                        await fetch(`${apiBase}/api/reports`, { 
                           method: 'DELETE',
                           headers: { 'Authorization': `Bearer ${token}` }
                         });

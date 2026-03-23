@@ -1,4 +1,5 @@
 import express from 'express';
+import cors from 'cors';
 import { createServer as createViteServer } from 'vite';
 import db from './db.ts';
 import bcrypt from 'bcryptjs';
@@ -192,6 +193,10 @@ function getModels(text: string, aiLabel?: string, aiConfidence?: number) {
 async function startServer() {
   log(`[STARTUP] Initializing Analysis Engine V7.2...`);
   const app = express();
+  
+  // Enable CORS for frontend hosting on Netlify
+  app.use(cors({ origin: "*" }));
+  
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
@@ -199,23 +204,21 @@ async function startServer() {
   const authenticateToken = (req: any, res: any, next: any) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
-    if (!token) return next(); // Allow guest
+    if (!token) return next();
 
     jwt.verify(token, JWT_SECRET, (err: any, decoded: any) => {
       if (err) return next();
-      
-      // Safety: Ensure id is present if missing from older tokens
       if (decoded && decoded.email && !decoded.id) {
         const user = db.prepare('SELECT id FROM users WHERE email = ?').get(decoded.email) as any;
         if (user) decoded.id = user.id;
       }
-      
       req.user = decoded;
       next();
     });
   };
 
-  // --- INTEGRITY SUMMARY (DYNAMIC DB QUERIES) ---
+  // --- API ENDPOINTS ---
+
   app.get('/api/analytics/summary', authenticateToken, (req: any, res) => {
     try {
       const userId = req.user?.id;
@@ -293,11 +296,14 @@ async function startServer() {
      res.json(getModels("Global Context Pipeline"));
   });
 
-  // --- ANALYSIS ENGINE V7.2 (ANALYTIC INTEGRITY) ---
+  // ANALYSIS ENGINE & SAVE LOGIC aliased for deployment compatibility
+  app.post("/api/analyze", authenticateToken, upload.single("file"), handleAnalyze);
+  app.post("/api/upload", authenticateToken, upload.single("file"), handleAnalyze);
+  app.post("/api/save-report", authenticateToken, handleSaveReport);
+  app.post("/api/reports/save", authenticateToken, handleSaveReport);
 
-  app.post("/api/upload", authenticateToken, upload.single("file"), async (req: any, res) => {
+  async function handleAnalyze(req: any, res: any) {
     log(`[INTEGRITY] ANALYSIS TRIGGERED`);
-    
     try {
       let text = "";
       if (req.file) {
@@ -337,16 +343,7 @@ Return JSON: {
   "trueAnalysis": "string",
   "truthConfidence": number (0-100),
   "correctedValues": [{"old": "string", "new": "string"}]
-}
-
-'context' (Contextual Analysis): Explain why the input is fake/misleading.
-'trueAnalysis' (True Analysis): YOU MUST ONLY USE THE PROVIDED SOURCES. 
-- Even if the input claim and sources have mismatched numbers (e.g. 3000cr vs 700cr), use the subject matching (e.g. Same Movie Name) to identify the truth.
-- State the correct factual data found in the sources.
-- Highlight the discrepancy clearly: "The claim of X is false; verified reports show Y."
-- If the sources do NOT contain enough information, set this to "Insufficient verified data".
-'correctedValues': Highlight specific corrected values based ONLY on provided sources.
-Keep 'trueAnalysis' strictly grounded in the provided context.` },
+}` },
           { role: 'user', content: `INPUT CLAIM: ${text.substring(0, 1500)}\n\n${sourcesContext}` }
         ]
       }, { timeout: 15000 });
@@ -369,7 +366,6 @@ Keep 'trueAnalysis' strictly grounded in the provided context.` },
         diffusionData = projectSocialSignal(text);
       }
 
-      // Generate spreaders based on sources or AI context
       const spreaderProtocols = ["@intel_node_", "@truth_sentinel_", "@veracity_hub_", "@media_pulse_"];
       const dynamicSpreaders = [
         ...realSources.slice(0, 2).map(s => `@${s.source.toLowerCase().replace(/\s+/g, '_')}_internal`),
@@ -391,74 +387,56 @@ Keep 'trueAnalysis' strictly grounded in the provided context.` },
         truthConfidence: (realSources.length === 0 || trueAnalysis === "Insufficient verified data") ? 0 : (aiResult.truthConfidence || 85),
         correctedValues: (trueAnalysis === "Insufficient verified data" || realSources.length === 0) ? [] : (aiResult.correctedValues || []),
         sources: realSources.map(s => ({ title: s.title, url: s.url, source: s.source, description: s.description })),
-        source_links: {
-          original: original?.url || null,
-          others: supporting.map(s => s.url)
-        },
+        source_links: { original: original?.url || null, others: supporting.map(s => s.url) },
         diffusion_data: diffusionData,
         spreaders: dynamicSpreaders,
         model_results: getModels(text, finalLabel, finalConfidence),
-        technicalMetadata: {
-          sourceCount: realSources.length,
-          publication: detectRegionalPublication(text) || intent.publication || "Identified Outlet",
-          botActivity: "Low (Organic)",
-          sourceReliability: realSources.length > 0 ? "High" : "Projected"
-        }
+        technicalMetadata: { sourceCount: realSources.length, botActivity: "Low (Organic)", sourceReliability: realSources.length > 0 ? "High" : "Projected" }
       };
 
-      // Save to database only for logged-in users with valid ID
+      // Automatic save for logged-in users
       if (req.user && req.user.id) {
-        log(`[SAVE] Attempting to save report for user: ${req.user.id}`);
         try {
-          db.prepare(`
-            INSERT INTO reports (userId, inputText, extractedText, result, sources, createdAt)
-            VALUES (?, ?, ?, ?, ?, ?)
-          `).run(
-            req.user.id.toString(), 
-            req.body.text || "", 
-            text, 
-            JSON.stringify(analysisResult), 
-            JSON.stringify(realSources),
-            new Date().toISOString()
+          db.prepare(`INSERT INTO reports (userId, inputText, extractedText, result, sources, createdAt) VALUES (?, ?, ?, ?, ?, ?)`).run(
+            req.user.id.toString(), req.body.text || "", text, JSON.stringify(analysisResult), JSON.stringify(realSources), new Date().toISOString()
           );
-          log(`[SAVE] Report saved successfully.`);
-        } catch (saveErr: any) {
-          log(`[SAVE ERROR] ${saveErr.message}`);
-        }
-      } else {
-        log(`[GUEST SESSION] Signal analyzed but not saved to persistent history.`);
+        } catch (saveErr: any) { log(`[SAVE ERROR] ${saveErr.message}`); }
       }
 
-      return res.json({
-        success: true,
-        data: text,
-        analysis: analysisResult
-      });
+      return res.json({ success: true, analysis: analysisResult, extractedText: text });
 
     } catch (err: any) {
       log(`[FATAL] ${err.message}`);
       res.status(500).json({ success: false, error: "Processing failed" });
     }
-  });
+  }
 
-  app.get('/api/reports', authenticateToken, (req: any, res) => {
-    if (!req.user || !req.user.id) return res.status(401).json({ success: false, error: "Authentication required" });
+  async function handleSaveReport(req: any, res: any) {
+    if (req.user && req.user.id && req.body.analysisResult) {
+      try {
+        db.prepare(`INSERT INTO reports (userId, inputText, extractedText, result, sources, createdAt) VALUES (?, ?, ?, ?, ?, ?)`).run(
+          req.user.id.toString(), req.body.text || "", req.body.extractedText || "", JSON.stringify(req.body.analysisResult), JSON.stringify(req.body.realSources || []), new Date().toISOString()
+        );
+        return res.json({ success: true, message: "Report saved" });
+      } catch (err: any) { return res.status(500).json({ success: false, error: err.message }); }
+    }
+    return res.json({ success: true, message: "Guest session - not saved" });
+  }
+
+  app.get('/api/reports', authenticateToken, (req: any, res: any) => {
+    if (!req.user || !req.user.id) return res.status(401).json({ success: false, error: "Auth required" });
     const reports = db.prepare('SELECT * FROM reports WHERE userId = ? ORDER BY createdAt DESC').all(req.user.id.toString());
-    res.json(reports.map((r: any) => ({
-      ...r,
-      result: JSON.parse(r.result),
-      sources: JSON.parse(r.sources)
-    })));
+    res.json(reports.map((r: any) => ({ ...r, result: JSON.parse(r.result), sources: JSON.parse(r.sources) })));
   });
 
-  app.delete('/api/report/:id', authenticateToken, (req: any, res) => {
-    if (!req.user || !req.user.id) return res.status(401).json({ success: false, error: "Authentication required" });
+  app.delete('/api/report/:id', authenticateToken, (req: any, res: any) => {
+    if (!req.user || !req.user.id) return res.status(401).json({ success: false, error: "Auth required" });
     db.prepare('DELETE FROM reports WHERE id = ? AND userId = ?').run(req.params.id, req.user.id.toString());
     res.json({ success: true });
   });
 
   app.delete('/api/reports', authenticateToken, (req: any, res) => {
-    if (!req.user || !req.user.id) return res.status(401).json({ success: false, error: "Authentication required" });
+    if (!req.user || !req.user.id) return res.status(401).json({ success: false, error: "Auth required" });
     db.prepare('DELETE FROM reports WHERE userId = ?').run(req.user.id.toString());
     res.json({ success: true });
   });
@@ -475,20 +453,17 @@ Keep 'trueAnalysis' strictly grounded in the provided context.` },
   app.post('/api/auth/signup', async (req, res) => {
     const { email, password } = req.body;
     const exists = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
-    if (exists) return res.status(400).json({ success: false, error: "Email already registered" });
-    
+    if (exists) return res.status(400).json({ success: false, error: "Email exists" });
     const hashed = await bcrypt.hash(password, 10);
     const result = db.prepare('INSERT INTO users (email, password) VALUES (?, ?)').run(email, hashed);
     const token = jwt.sign({ id: result.lastInsertRowid, email }, JWT_SECRET);
     res.json({ success: true, token, user: { id: result.lastInsertRowid, email } });
   });
 
+  // Only serve Vite if not production (for backend-only Render deploy)
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({ server: { middlewareMode: true }, appType: 'spa' });
     app.use(vite.middlewares);
-  } else {
-    app.use(express.static(path.join(__dirname, 'dist')));
-    app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'dist', 'index.html')));
   }
 
   const PORT = Number(process.env.PORT) || 3000;
@@ -497,10 +472,6 @@ Keep 'trueAnalysis' strictly grounded in the provided context.` },
 }
 
 startServer().catch(err => {
-  console.error("=========================================");
-  console.error("🔥 FATAL STARTUP ERROR 🔥");
-  console.error("Message:", err.message);
-  console.error("Stack:", err.stack);
-  console.error("=========================================");
+  console.error("🔥 FATAL STARTUP ERROR 🔥", err);
   process.exit(1);
 });

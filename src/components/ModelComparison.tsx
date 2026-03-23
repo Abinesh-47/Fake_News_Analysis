@@ -9,13 +9,14 @@ interface ModelMetric {
 }
 
 export default function ModelComparison({ showDetails = false, models }: { showDetails?: boolean, models?: ModelMetric[] }) {
+  const apiBase = import.meta.env.VITE_API_URL || '';
   const [localModels, setLocalModels] = useState<ModelMetric[]>(models || []);
 
   useEffect(() => {
     if (models && models.length > 0) {
       setLocalModels(models);
     } else {
-      fetch('/api/models/comparison')
+      fetch(`${apiBase}/api/models/comparison`)
         .then(res => res.json())
         .then(setLocalModels);
     }
