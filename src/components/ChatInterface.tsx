@@ -87,6 +87,10 @@ ${result.data.substring(0, 500)}${result.data.length > 500 ? '...' : ''}
 
 ${analysis.context}
 
+[TRUE ANALYSIS]
+${analysis.trueAnalysis || "Searching verified news archives..."}
+${analysis.correctedValues?.length > 0 ? `\n[CORRECTED DATA]\n${analysis.correctedValues.map((cv: any) => `- ${cv.old} ❌ → ${cv.new} ✅`).join('\n')}` : ''}
+
 [STRATEGIC GROUNDING]
 # ORIGIN: ${originalSource ? originalSource : "Projected Signal (Pending Search)"}
 # CONTEXTUAL NODES: ${sourceCount > 0 ? sourceCount : 'Deep Search Active'}

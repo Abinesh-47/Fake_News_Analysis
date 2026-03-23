@@ -57,13 +57,16 @@ async function extractSearchKeywords(text: string) {
     const completion = await openai.chat.completions.create({
       model: 'openai/gpt-4o-mini',
       messages: [
-        { role: 'system', content: `You are a forensic news analyst. Extract the most specific search keywords (names, dates, events) to find real news articles about this. Return JSON: {"english": "main search terms", "broad": "alternative broad terms", "tamil": "tamils search terms", "publication": "suggested outlet if mentioned"}` },
+        { role: 'system', content: `You are a forensic news analyst. 
+Extract core entities (names, movies, events) and generate 4 specific search query variations to find the real facts.
+Variations should focus on official data, collections, and earnings, ignoring exaggerated numbers in the input.
+Return JSON: {"queries": ["variation 1", "variation 2", "variation 3", "variation 4"], "publication": "suggested outlet"}` },
         { role: 'user', content: text.substring(0, 1500) }
       ]
     }, { timeout: 10000 });
     return parseAiJson(completion.choices[0]?.message?.content || '{}');
   } catch (e: any) {
-    return { english: text.substring(0, 50), tamil: "", publication: "" };
+    return { queries: [text.substring(0, 50)], publication: "" };
   }
 }
 
@@ -89,52 +92,47 @@ function detectRegionalPublication(text: string) {
   return null;
 }
 
-async function findNewsSources(text: string, queries: any) {
+const Sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
+
+async function findNewsSources(text: string, intent: any) {
   if (!GNEWS_API_KEY) return [];
   const results: any[] = [];
-  const searchTerms = [queries.english];
-  if (queries.tamil) searchTerms.push(queries.tamil);
-  if (queries.broad) searchTerms.push(queries.broad);
+  const searchTerms = intent.queries || [intent.english, intent.broad].filter(Boolean);
   
   log(`[SEARCH] Initiating discovery with terms: ${JSON.stringify(searchTerms)}`);
 
   for (const q of searchTerms) {
     if (!q) continue;
     try {
+      await Sleep(500); // Prevent API rate limit triggers
       const resp = await axios.get(`https://gnews.io/api/v4/search?q=${encodeURIComponent(q)}&lang=en&max=10&apikey=${GNEWS_API_KEY}`, { timeout: 8000 });
       if (resp.data.articles) results.push(...resp.data.articles);
-    } catch (err: any) { log(`[SEARCH ERROR] Query [${q}] failed.`); }
+    } catch (err: any) { log(`[SEARCH ERROR] Query [${q}] failed: ${err.message}`); }
   }
 
-  // Deduplication
   const unique = Array.from(new Map(results.map(a => [a.url, a])).values());
   const formatted = unique.map((a: any) => ({
     title: a.title,
     source: a.source.name,
     url: a.url,
+    description: a.description || "",
     publishedAt: a.publishedAt,
     similarity: calculateSimilarity(text, a.title + " " + (a.description || ""))
-  })).filter((a: any) => a.similarity > 0.05).sort((a, b) => new Date(a.publishedAt).getTime() - new Date(b.publishedAt).getTime());
+  })).filter((a: any) => a.similarity > 0.01).sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
 
-  // AI Hallucination Fallback (Only if GNews fails AND news is highly credible)
-  if (formatted.length === 0) {
-    log(`[AI] GNews found 0. Requesting AI grounding...`);
-    try {
-      const completion = await openai.chat.completions.create({
-        model: 'openai/gpt-4o-mini',
-        messages: [
-          { role: 'system', content: `Identify the REAL news event. If this is a known event, provide 2-3 REAL expected URLs from major outlets (Hindu, Daily Thanthi, etc). If unknown, say UNKNOWN. Return JSON: {"sources": [{"title": "string", "url": "string", "source": "string"}]}` },
-          { role: 'user', content: text.substring(0, 1000) }
-        ]
-      });
-      const aiSources = parseAiJson(completion.choices[0]?.message?.content || '{}');
-      if (aiSources.sources && Array.isArray(aiSources.sources)) {
-        return aiSources.sources.map((s: any) => ({ ...s, publishedAt: new Date().toISOString(), similarity: 0.9 }));
-      }
-    } catch (e) { log(`[AI GROUNDING ERROR]`); }
-  }
+  const TRUSTED_DOMAINS = [
+    'bbc.com', 'reuters.com', 'thehindu.com', 'indianexpress.com', 'timesofindia.indiatimes.com', 
+    'hindustantimes.com', 'ndtv.com', 'indiatoday.in', 'bloomberg.com', 'apnews.com', 'ndtvprofit.com',
+    'afp.com', 'variety.com', 'hollywoodreporter.com', 'boxofficemojo.com', 'bollywoodhungama.com',
+    'filmfare.com', 'pinkvilla.com', 'moneycontrol.com', 'financialexpress.com', 'economictimes.indiatimes.com'
+  ];
 
-  return formatted;
+  const filtered = formatted.filter((a: any) => {
+    const url = a.url.toLowerCase();
+    return TRUSTED_DOMAINS.some(domain => url.includes(domain));
+  });
+
+  return filtered.slice(0, 10);
 }
 
 function projectSocialSignal(title: string) {
@@ -323,11 +321,32 @@ async function startServer() {
       const original = realSources[0] || null;
       const supporting = realSources.slice(1);
 
+      const sourcesContext = realSources.length > 0 
+        ? "VERIFIED SOURCES CONTENT:\n" + realSources.slice(0, 5).map(s => `Title: ${s.title}\nSource: ${s.source}\nSnippet: ${s.description}`).join("\n\n")
+        : "No verified sources found in current news database.";
+
       const completion = await openai.chat.completions.create({
         model: 'openai/gpt-4o-mini',
         messages: [
-          { role: 'system', content: `Forensic Veracity. Return JSON: {"label":"REAL"|"FAKE", "confidence":number, "context":"string"}` },
-          { role: 'user', content: text.substring(0, 1500) }
+          { role: 'system', content: `Forensic Veracity & Truth Reconstruction. 
+Return JSON: {
+  "label": "REAL" | "FAKE", 
+  "confidence": number, 
+  "context": "string", 
+  "trueAnalysis": "string",
+  "truthConfidence": number (0-100),
+  "correctedValues": [{"old": "string", "new": "string"}]
+}
+
+'context' (Contextual Analysis): Explain why the input is fake/misleading.
+'trueAnalysis' (True Analysis): YOU MUST ONLY USE THE PROVIDED SOURCES. 
+- Even if the input claim and sources have mismatched numbers (e.g. 3000cr vs 700cr), use the subject matching (e.g. Same Movie Name) to identify the truth.
+- State the correct factual data found in the sources.
+- Highlight the discrepancy clearly: "The claim of X is false; verified reports show Y."
+- If the sources do NOT contain enough information, set this to "Insufficient verified data".
+'correctedValues': Highlight specific corrected values based ONLY on provided sources.
+Keep 'trueAnalysis' strictly grounded in the provided context.` },
+          { role: 'user', content: `INPUT CLAIM: ${text.substring(0, 1500)}\n\n${sourcesContext}` }
         ]
       }, { timeout: 15000 });
       const aiResult = parseAiJson(completion.choices[0]?.message?.content || '{}');
@@ -356,14 +375,21 @@ async function startServer() {
         ...spreaderProtocols.map(p => `${p}${Math.floor(Math.random() * 999)}`)
       ].slice(0, 5);
 
-      const finalLabel = realSources.length > 0 ? "REAL" : (aiResult.label || "UNCERTAIN");
-      const finalConfidence = realSources.length > 0 ? Math.max(90, aiResult.confidence || 0) : (aiResult.confidence || 75);
+      const finalLabel = aiResult.label || (realSources.length > 0 ? "REAL" : "UNCERTAIN");
+      const finalConfidence = aiResult.confidence || (realSources.length > 0 ? 80 : 50);
+
+      const trueAnalysis = (realSources.length === 0) 
+          ? "No reliable sources found" 
+          : (aiResult.trueAnalysis || "Insufficient verified data");
 
       const analysisResult = {
         label: finalLabel,
         confidence: Math.min(finalConfidence, 100),
         context: aiResult.context || "Forensic analysis complete.",
-        sources: realSources.map(s => ({ title: s.title, url: s.url, source: s.source })),
+        trueAnalysis: trueAnalysis,
+        truthConfidence: (realSources.length === 0 || trueAnalysis === "Insufficient verified data") ? 0 : (aiResult.truthConfidence || 85),
+        correctedValues: (trueAnalysis === "Insufficient verified data" || realSources.length === 0) ? [] : (aiResult.correctedValues || []),
+        sources: realSources.map(s => ({ title: s.title, url: s.url, source: s.source, description: s.description })),
         source_links: {
           original: original?.url || null,
           others: supporting.map(s => s.url)
@@ -399,7 +425,7 @@ async function startServer() {
           log(`[SAVE ERROR] ${saveErr.message}`);
         }
       } else {
-        log(`[SAVE] Skipping save - user not authenticated or missing ID. User present: ${!!req.user}`);
+        log(`[GUEST SESSION] Signal analyzed but not saved to persistent history.`);
       }
 
       return res.json({

@@ -3,7 +3,7 @@ import {
   Shield, Database, BarChart3, Share2, FileText, 
   History, Lock, LogOut, ChevronRight, Globe, 
   Activity, ShieldCheck, ShieldAlert, Trash, Menu, X, Bot,
-  TrendingUp, Users, Search
+  TrendingUp, Users, Search, ArrowRight
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Link } from 'react-router-dom';
@@ -26,14 +26,18 @@ interface AnalysisResult {
   label: 'REAL' | 'FAKE';
   confidence: number;
   context: string;
+  trueAnalysis?: string;
+  truthConfidence?: number;
+  correctedValues?: { old: string; new: string }[];
   spreaders: string[];
   location: string;
   technicalMetadata: {
     propagationPattern: string;
     botActivity: string;
     sourceReliability: string;
+    publication?: string;
   };
-  sources: { title: string; url: string }[];
+  sources: { title: string; url: string; source: string; description?: string }[];
   model_results?: any[];
   source_links?: { original?: string, others?: string[] };
   diffusion_data?: any[];
@@ -622,9 +626,47 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
                     <section>
                        <h4 className="text-[10px] uppercase tracking-[0.4em] text-slate-500 font-bold mb-6">Contextual Analysis</h4>
                        <p className="text-sm text-slate-300 leading-relaxed bg-white/5 p-6 rounded-xl border border-white/5">
-                         {latestAnalysis?.context || latestAnalysis?.data || 'Consolidating intelligence...'}
+                         {latestAnalysis?.context || latestAnalysis?.news_title || 'Consolidating intelligence...'}
                        </p>
-                     </section>
+                    </section>
+
+                    <section className="relative overflow-hidden">
+                       <div className="flex items-center justify-between mb-6">
+                         <h4 className="text-[10px] uppercase tracking-[0.4em] text-blue-400 font-bold">🔷 TRUE ANALYSIS</h4>
+                         {latestAnalysis?.truthConfidence && (
+                           <span className="text-[9px] text-slate-500 uppercase tracking-widest font-bold">
+                             Truth Index: {latestAnalysis.truthConfidence}%
+                           </span>
+                         )}
+                       </div>
+                       <div className="relative group">
+                          <div className={`absolute -inset-1 rounded-xl blur opacity-25 group-hover:opacity-50 transition duration-1000 ${
+                            (latestAnalysis?.trueAnalysis === "No reliable sources found" || latestAnalysis?.trueAnalysis === "Insufficient verified data")
+                              ? "bg-slate-500/20"
+                              : "bg-gradient-to-r from-blue-600/20 to-indigo-600/20"
+                          }`}></div>
+                          <div className={`relative text-sm text-slate-200 leading-relaxed bg-[#0F172A]/80 p-8 rounded-xl border shadow-2xl ${
+                            (latestAnalysis?.trueAnalysis === "No reliable sources found" || latestAnalysis?.trueAnalysis === "Insufficient verified data")
+                              ? "border-white/5 opacity-60"
+                              : "border-blue-500/20"
+                          }`}>
+                            {latestAnalysis?.trueAnalysis || 'Searching verified news archives for factual grounding...'}
+                            
+                            {latestAnalysis?.correctedValues && latestAnalysis.correctedValues.length > 0 && (
+                              <div className="mt-6 pt-6 border-t border-white/5 space-y-3">
+                                <p className="text-[9px] uppercase tracking-widest text-slate-500 font-bold mb-2">Corrected Factual Data</p>
+                                {latestAnalysis.correctedValues.map((cv, idx) => (
+                                  <div key={idx} className="flex items-center gap-3 text-[10px]">
+                                    <span className="text-red-400 font-bold line-through px-2 py-0.5 bg-red-400/10 rounded">{cv.old}</span>
+                                    <ArrowRight size={12} className="text-slate-600" />
+                                    <span className="text-emerald-400 font-bold px-2 py-0.5 bg-emerald-400/10 rounded">{cv.new}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                    </section>
 
                      <section>
                        <h4 className="text-[10px] uppercase tracking-[0.4em] text-slate-500 font-bold mb-6">Geographic Propagation</h4>
