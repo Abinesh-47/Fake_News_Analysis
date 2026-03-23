@@ -200,6 +200,11 @@ async function startServer() {
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+  // Root health check
+  app.get("/", (req, res) => {
+    res.send("Backend is running");
+  });
+
   // --- MIDDLEWARE ---
   const authenticateToken = (req: any, res: any, next: any) => {
     const authHeader = req.headers['authorization'];
@@ -298,6 +303,7 @@ async function startServer() {
 
   // ANALYSIS ENGINE & SAVE LOGIC aliased for deployment compatibility
   app.post("/api/analyze", authenticateToken, upload.single("file"), handleAnalyze);
+  app.post("/analyze", authenticateToken, upload.single("file"), handleAnalyze);
   app.post("/api/upload", authenticateToken, upload.single("file"), handleAnalyze);
   app.post("/api/save-report", authenticateToken, handleSaveReport);
   app.post("/api/reports/save", authenticateToken, handleSaveReport);
@@ -317,11 +323,15 @@ async function startServer() {
           }
         } catch (ocrErr: any) { log(`[OCR FAIL]`); }
         if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+      } else if (req.body.input) {
+        text = req.body.input;
       } else if (req.body.text) {
         text = req.body.text;
       }
 
-      if (!text || text.trim() === "") return res.json({ success: false, error: "Empty signal" });
+      if (!text || text.trim() === "") {
+        return res.status(400).json({ success: false, error: "No input provided" });
+      }
 
       const intent = await extractSearchKeywords(text);
       const realSources = await findNewsSources(text, intent);
@@ -468,7 +478,10 @@ Return JSON: {
 
   const PORT = Number(process.env.PORT) || 3000;
   log(`[STARTUP] Binding to port ${PORT} on 0.0.0.0...`);
-  app.listen(PORT, '0.0.0.0', () => log(`[INTEGRITY ACTIVE] V7.2 on ${PORT}`));
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on port ${PORT}`);
+    log(`[INTEGRITY ACTIVE] V7.2 on ${PORT}`);
+  });
 }
 
 startServer().catch(err => {

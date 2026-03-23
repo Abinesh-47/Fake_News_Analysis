@@ -53,7 +53,7 @@ export default function ChatInterface({ onAnalysisComplete }: ChatInterfaceProps
       if (file) {
         formData.append("file", file);
       } else if (text) {
-        formData.append("text", text);
+        formData.append("input", text);
       } else {
         throw new Error("Empty input");
       }
