@@ -5,7 +5,15 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const db = new Database('analytics.db');
+let db: any;
+try {
+  db = new Database('analytics.db');
+  console.log(`[DB] Database initialized successfully.`);
+} catch (err: any) {
+  console.error(`[DB ERROR] Failed to initialize better-sqlite3:`, err.message);
+  // Re-throw to allow top-level catch in server.ts to report it
+  throw err;
+}
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (

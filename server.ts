@@ -190,6 +190,7 @@ function getModels(text: string, aiLabel?: string, aiConfidence?: number) {
 }
 
 async function startServer() {
+  log(`[STARTUP] Initializing Analysis Engine V7.2...`);
   const app = express();
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ extended: true, limit: '50mb' }));
@@ -491,7 +492,15 @@ Keep 'trueAnalysis' strictly grounded in the provided context.` },
   }
 
   const PORT = Number(process.env.PORT) || 3000;
+  log(`[STARTUP] Binding to port ${PORT} on 0.0.0.0...`);
   app.listen(PORT, '0.0.0.0', () => log(`[INTEGRITY ACTIVE] V7.2 on ${PORT}`));
 }
 
-startServer();
+startServer().catch(err => {
+  console.error("=========================================");
+  console.error("🔥 FATAL STARTUP ERROR 🔥");
+  console.error("Message:", err.message);
+  console.error("Stack:", err.stack);
+  console.error("=========================================");
+  process.exit(1);
+});
