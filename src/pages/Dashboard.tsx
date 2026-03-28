@@ -12,12 +12,15 @@ import DiffusionChart from '../components/DiffusionChart';
 import ModelComparison from '../components/ModelComparison';
 import ChatInterface from '../components/ChatInterface';
 import NewsUpload from '../components/NewsUpload';
+import SparkResults from '../components/SparkResults';
 
 interface Summary {
-  totalNews: number;
+  verifiedCount: number;
+  activeSparkNodes: number;
   averageCredibility: number;
   activeUsers: number;
   dataProcessed: string;
+  trend?: string;
 }
 
 interface AnalysisResult {
@@ -47,17 +50,39 @@ interface AnalysisResult {
 }
 
 export default function Dashboard({ user, onLogout }: { user: { email: string } | null, onLogout: () => void }) {
-  const apiBase = import.meta.env.VITE_API_URL || '';
+  const apiBase = (import.meta as any).env.VITE_API_URL || '';
   const [summary, setSummary] = useState<Summary | null>(null);
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState(sessionStorage.getItem('activeTab') || 'overview');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [latestAnalysis, setLatestAnalysis] = useState<AnalysisResult | null>(null);
   const [allNews, setAllNews] = useState<any[]>([]);
   const [selectedDiffusionId, setSelectedDiffusionId] = useState<number | null>(null);
+  const [sparkResults, setSparkResults] = useState<any[]>([]);
+  const [isSparkLoading, setIsSparkLoading] = useState(false);
+  const [jobStatus, setJobStatus] = useState<{status: string, message: string, lastRun: string | null}>({
+    status: 'idle',
+    message: 'Engine Ready',
+    lastRun: null
+  });
+  const [unifiedResult, setUnifiedResult] = useState<any>(null);
+  const [pendingRedirect, setPendingRedirect] = useState(false);
 
-  // Scroll to top on tab change
+  const displayVerdict = unifiedResult?.verdict || latestAnalysis?.label || 'NEUTRAL';
+  const displayScore = Number(unifiedResult?.combined_score || latestAnalysis?.confidence || latestAnalysis?.truthConfidence || 0);
+
+  // Auto-redirect effect when analysis completes
+  useEffect(() => {
+    if (pendingRedirect && (latestAnalysis || unifiedResult)) {
+      setActiveTab('dossier');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      setPendingRedirect(false);
+    }
+  }, [latestAnalysis, unifiedResult, pendingRedirect]);
+
+  // Scroll to top on tab change and persist state
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
+    sessionStorage.setItem('activeTab', activeTab);
   }, [activeTab]);
 
   useEffect(() => {
@@ -91,12 +116,17 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
             setAllNews([]);
           });
       } else {
+        // GUEST SYNC: Still fetch the global summary for dashboard metrics
+        fetch(`${apiBase}/api/analytics/summary`)
+          .then(res => res.json())
+          .then(setSummary)
+          .catch(err => console.error('Summary fetch error:', err));
+
         try {
-          setSummary(null);
           const raw = localStorage.getItem('guestReports');
           const guestData = raw ? JSON.parse(raw) : [];
           setAllNews(guestData);
-          setLatestAnalysis(null);
+          // Don't wipe latestAnalysis here so the Dossier stays visible
         } catch (err) {
           console.error('Guest data parse error:', err);
           setAllNews([]);
@@ -117,9 +147,63 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
     return () => window.removeEventListener('beforeunload', handleUnload);
   }, [user]);
 
+  const fetchUnifiedResults = () => {
+    fetch(`${apiBase}/api/final-results`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.final_result) {
+          setUnifiedResult(data.final_result);
+        }
+      })
+      .catch(err => console.error('Failed to fetch unified results:', err));
+  };
+
+  // Poll for Job Status
+  useEffect(() => {
+    const fetchStatus = () => {
+      fetch(`${apiBase}/api/job-status`)
+        .then(res => res.json())
+        .then(data => {
+          setJobStatus(data);
+          if (data.status === 'running') setIsSparkLoading(true);
+          else {
+            setIsSparkLoading(false);
+            if (data.status === 'completed') fetchUnifiedResults();
+          }
+        })
+        .catch(err => console.error('Status fetch error:', err));
+    };
+
+    fetchStatus();
+    const interval = setInterval(fetchStatus, 3000); // Poll every 3s
+    return () => clearInterval(interval);
+  }, []);
+
+  // Fetch Spark Results when activeTab is 'bigdata'
+  useEffect(() => {
+    if (activeTab === 'bigdata') {
+      const apiBase = (import.meta as any).env.VITE_API_URL || '';
+      fetch(`${apiBase}/api/spark/results`)
+        .then(res => res.json())
+        .then(data => {
+          if (Array.isArray(data)) {
+            setSparkResults(data);
+          }
+        })
+        .catch(err => console.error('Spark results fetch error:', err));
+    }
+  }, [activeTab]);
+
+  const handleAnalysisStart = () => {
+    setActiveTab('bigdata');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const handleAnalysisComplete = (result: AnalysisResult) => {
     setLatestAnalysis(result);
-    setActiveTab('dossier');
+    fetchUnifiedResults(); 
+    // Manual redirect from Big Data tab instead of auto-redirect
+
     // Refresh archive
     if (user) {
       const token = localStorage.getItem('token');
@@ -133,8 +217,18 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
           }
         });
     } else {
+      // GUEST ENHANCEMENT: Persist result to localStorage
       const guestData = JSON.parse(localStorage.getItem('guestReports') || '[]');
-      setAllNews(guestData);
+      const newReport = {
+        id: Date.now(),
+        inputText: result.news_title || "Guest Input",
+        text: result.news_title || "Guest Input",
+        result: result,
+        createdAt: new Date().toISOString()
+      };
+      const updated = [newReport, ...guestData].slice(0, 50); // Keep last 50
+      localStorage.setItem('guestReports', JSON.stringify(updated));
+      setAllNews(updated);
     }
   };
 
@@ -162,6 +256,29 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
       } catch (err) {
         console.error('Failed to delete report', err);
       }
+    }
+  };
+
+  const handleRunSparkAnalysis = async () => {
+    setIsSparkLoading(true);
+    try {
+      const apiBase = (import.meta as any).env.VITE_API_URL || '';
+      const response = await fetch(`${apiBase}/api/spark/analyze`, { 
+        method: 'POST' 
+      });
+      const data = await response.json();
+      if (data.success) {
+        // Refresh the results list immediately from the GET endpoint
+        const resResponse = await fetch(`${apiBase}/api/spark/results`);
+        const resData = await resResponse.json();
+        if (Array.isArray(resData)) {
+          setSparkResults(resData);
+        }
+      }
+    } catch (err) {
+      console.error('Spark analysis error:', err);
+    } finally {
+      setIsSparkLoading(false);
     }
   };
 
@@ -214,6 +331,12 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
                 active={activeTab === 'dossier'} 
                 onClick={() => setActiveTab('dossier')} 
                 disabled={!latestAnalysis}
+              />
+              <NavItem 
+                icon={<Shield size={18} className="text-blue-400" />} 
+                label="Big Data Engine" 
+                active={activeTab === 'bigdata'} 
+                onClick={() => setActiveTab('bigdata')} 
               />
               
             </nav>
@@ -285,12 +408,15 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
         <div className="p-4 sm:p-6 lg:p-12 max-w-7xl mx-auto w-full">
           {activeTab === 'overview' && (
             <div className="space-y-8 lg:space-y-12">
-              <ChatInterface onAnalysisComplete={handleAnalysisComplete} />
+              <ChatInterface 
+                onAnalysisComplete={handleAnalysisComplete} 
+                onAnalysisStart={handleAnalysisStart}
+              />
               
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 <StatsCard 
                   title="Verified Records" 
-                  value={summary?.totalNews || 0} 
+                  value={summary?.verifiedCount || 0} 
                   icon={<Database className="text-blue-400" />} 
                   trend={summary?.trend || "STABLE"}
                 />
@@ -301,10 +427,10 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
                   trend="VERIFIED"
                 />
                 <StatsCard 
-                  title="Active Sentinels" 
-                  value={summary?.activeUsers || 0} 
-                  icon={<Users className="text-indigo-400" />} 
-                  trend="LIVE"
+                  title="Active News Nodes" 
+                  value={summary?.activeSparkNodes || 0} 
+                  icon={<Bot className="text-indigo-400" />} 
+                  trend="PROCESSING"
                 />
                 <StatsCard 
                   title="Data Volume" 
@@ -316,7 +442,7 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 lg:gap-16">
                 <div className="lg:col-span-2 space-y-8 lg:space-y-16">
-                  {latestAnalysis && (
+                  {(unifiedResult || latestAnalysis) && (
                     <section>
                       <div className="flex items-center justify-between mb-8">
                         <h3 className="text-[10px] uppercase tracking-[0.4em] text-slate-500 font-bold">Latest Intelligence</h3>
@@ -328,23 +454,28 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
                         </button>
                       </div>
                       <div className={`royal-card p-6 lg:p-8 border-l-4 ${
-                        latestAnalysis.label === 'REAL' ? 'border-l-emerald-500' : 'border-l-red-500'
+                        (unifiedResult?.verdict || latestAnalysis?.label) === 'REAL' ? 'border-l-emerald-500' : 'border-l-red-500'
                       }`}>
                         <div className="flex items-center justify-between mb-4">
                           <span className={`text-[10px] font-bold uppercase tracking-widest ${
-                            latestAnalysis.label === 'REAL' ? 'text-emerald-500' : 'text-red-500'
+                            displayVerdict === 'REAL' ? 'text-emerald-500' : 'text-red-500'
                           }`}>
-                            {latestAnalysis.label} VERDICT
+                            {displayVerdict} VERDICT
                           </span>
-                          <span className="text-[9px] text-slate-500 uppercase tracking-widest">Confidence: {latestAnalysis.confidence.toFixed(1)}%</span>
+                          <span className="text-[9px] text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                            <span className="px-2 py-0.5 bg-blue-500/10 border border-blue-500/20 rounded-md text-blue-400">UNIFIED CONSENSUS</span>
+                            Score: {displayScore.toFixed(1)}%
+                          </span>
                         </div>
-                        <p className="text-xs text-slate-300 line-clamp-2 mb-4">{latestAnalysis.context}</p>
+                        <p className="text-xs text-slate-300 line-clamp-2 mb-4">
+                          {unifiedResult?.ai_analysis?.context || latestAnalysis?.context}
+                        </p>
                         <div className="flex items-center gap-4">
                           <div className="flex items-center gap-1 text-[9px] text-slate-500 uppercase tracking-widest">
-                            <Globe size={10} /> {latestAnalysis.location}
+                            <Globe size={10} /> {unifiedResult?.location || latestAnalysis?.location || "Global"}
                           </div>
                           <div className="flex items-center gap-1 text-[9px] text-slate-500 uppercase tracking-widest">
-                            <Users size={10} /> {latestAnalysis?.spreaders?.length || 0} Spreaders
+                            <Users size={10} /> {unifiedResult?.spreaders?.length || latestAnalysis?.spreaders?.length || 0} Spreaders
                           </div>
                         </div>
                       </div>
@@ -610,7 +741,7 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
             </div>
           )}
 
-          {activeTab === 'dossier' && latestAnalysis && (
+           {(activeTab === 'dossier' && (unifiedResult || latestAnalysis)) && (
             <div className="space-y-8 lg:space-y-12">
               <div className="royal-card p-6 lg:p-12">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8 lg:mb-12">
@@ -619,10 +750,10 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
                     <p className="text-slate-500 text-[10px] uppercase tracking-[0.2em] mt-2">Comprehensive Truth Verification Report</p>
                   </div>
                   <div className={`px-6 py-3 border rounded-xl flex items-center gap-3 ${
-                    latestAnalysis.label === 'REAL' ? 'border-emerald-500/30 bg-emerald-500/5 text-emerald-500' : 'border-red-500/30 bg-red-500/5 text-red-500'
+                    displayVerdict === 'REAL' ? 'border-emerald-500/30 bg-emerald-500/5 text-emerald-500' : 'border-red-500/30 bg-red-500/5 text-red-500'
                   }`}>
-                    {latestAnalysis.label === 'REAL' ? <ShieldCheck size={20} /> : <ShieldAlert size={20} />}
-                    <span className="text-sm font-bold uppercase tracking-[0.3em]">{latestAnalysis.label} VERDICT</span>
+                    {displayVerdict === 'REAL' ? <ShieldCheck size={20} /> : <ShieldAlert size={20} />}
+                    <span className="text-sm font-bold uppercase tracking-[0.3em]">{displayVerdict} VERDICT</span>
                   </div>
                 </div>
 
@@ -640,19 +771,17 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
                     <section>
                        <h4 className="text-[10px] uppercase tracking-[0.4em] text-slate-500 font-bold mb-6">Contextual Analysis</h4>
                        <p className="text-sm text-slate-300 leading-relaxed bg-white/5 p-6 rounded-xl border border-white/5">
-                         {latestAnalysis?.context || latestAnalysis?.news_title || 'Consolidating intelligence...'}
+                         {unifiedResult?.ai_analysis?.explanation || latestAnalysis?.context || latestAnalysis?.news_title || 'Consolidating intelligence...'}
                        </p>
                     </section>
 
                     <section className="relative overflow-hidden">
-                       <div className="flex items-center justify-between mb-6">
-                         <h4 className="text-[10px] uppercase tracking-[0.4em] text-blue-400 font-bold">🔷 TRUE ANALYSIS</h4>
-                         {latestAnalysis?.truthConfidence && (
-                           <span className="text-[9px] text-slate-500 uppercase tracking-widest font-bold">
-                             Truth Index: {latestAnalysis.truthConfidence}%
-                           </span>
-                         )}
-                       </div>
+                        <div className="flex items-center justify-between mb-6">
+                          <h4 className="text-[10px] uppercase tracking-[0.4em] text-blue-400 font-bold">🔷 TRUE ANALYSIS</h4>
+                          <span className="text-[9px] text-slate-500 uppercase tracking-widest font-bold">
+                            Truth Index: {displayScore.toFixed(1)}%
+                          </span>
+                        </div>
                        <div className="relative group">
                           <div className={`absolute -inset-1 rounded-xl blur opacity-25 group-hover:opacity-50 transition duration-1000 ${
                             (latestAnalysis?.trueAnalysis === "No reliable sources found" || latestAnalysis?.trueAnalysis === "Insufficient verified data")
@@ -664,7 +793,7 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
                               ? "border-white/5 opacity-60"
                               : "border-blue-500/20"
                           }`}>
-                            {latestAnalysis?.true_analysis || latestAnalysis?.trueAnalysis || 'Searching verified news archives for factual grounding...'}
+                            {unifiedResult?.ai_analysis?.true_analysis || latestAnalysis?.true_analysis || latestAnalysis?.trueAnalysis || 'Searching verified news archives for factual grounding...'}
                             
                             {latestAnalysis?.correctedValues && latestAnalysis.correctedValues.length > 0 && (
                               <div className="mt-6 pt-6 border-t border-white/5 space-y-3">
@@ -697,10 +826,11 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
                   <div className="space-y-8 lg:space-y-12">
                     <section>
                        <h4 className="text-[10px] uppercase tracking-[0.4em] text-slate-500 font-bold mb-6">Technical Backend (Propagation)</h4>
-                       <div className="grid grid-cols-1 gap-4">
-                         <BackendMetric label="Target Outlet" value={latestAnalysis?.technicalMetadata?.publication || 'Multi-Source Signal'} />
-                         <BackendMetric label="Bot Activity Level" value={latestAnalysis?.technicalMetadata?.botActivity || 'Low (Organic)'} />
-                          <BackendMetric label="Source Reliability" value={latestAnalysis?.technicalMetadata?.sourceReliability || 'Verified'} />
+                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                         <BackendMetric label="Target Outlet" value={unifiedResult?.ai_analysis?.publication || latestAnalysis?.technicalMetadata?.publication || 'Multi-Source Signal'} />
+                         <BackendMetric label="Bot Activity" value={latestAnalysis?.technicalMetadata?.botActivity || 'Low (Organic)'} />
+                         <BackendMetric label="AI Verification" value={unifiedResult?.ai_score ? `${unifiedResult.ai_score}%` : 'Verified'} />
+                         <BackendMetric label="Big Data Sync" value={unifiedResult?.spark_score ? `${unifiedResult.spark_score}%` : 'Synchronized'} />
                        </div>
                      </section>
 
@@ -776,6 +906,108 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
             </div>
           )}
 
+          {activeTab === 'bigdata' && (
+            <div className="space-y-8 lg:space-y-12">
+              <div className="royal-card p-8 lg:p-12 border-b-4 border-b-blue-500/20">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-8">
+                  <div>
+                    <h3 className="text-2xl font-display font-extrabold text-white uppercase tracking-tight">Big Data Analysis Engine</h3>
+                    <p className="text-slate-500 text-[10px] uppercase tracking-[0.2em] mt-2">Distributed Processing via Apache Spark</p>
+                  </div>
+                  
+                  <div className="flex items-center gap-6">
+                    <div className="flex flex-col items-end">
+                      <div className="flex items-center gap-2">
+                        <div className={`w-2 h-2 rounded-full ${
+                          jobStatus.status === 'running' ? 'bg-blue-500 animate-ping' : 
+                          jobStatus.status === 'error' ? 'bg-red-500' : 'bg-emerald-500'
+                        }`} />
+                        <span className={`text-[10px] font-bold uppercase tracking-widest ${
+                          jobStatus.status === 'error' ? 'text-red-400' : 'text-slate-300'
+                        }`}>
+                          {jobStatus.status}
+                        </span>
+                      </div>
+                      <p className="text-[8px] text-slate-500 uppercase tracking-widest mt-1">{jobStatus.message}</p>
+                    </div>
+
+                    <button 
+                      onClick={handleRunSparkAnalysis}
+                      disabled={isSparkLoading}
+                      className={`px-8 py-4 rounded-xl flex items-center gap-3 font-bold uppercase tracking-[0.3em] text-[10px] transition-all ${
+                        isSparkLoading 
+                          ? 'bg-blue-600/20 text-blue-500 border border-blue-500/20 animate-pulse cursor-not-allowed' 
+                          : 'bg-blue-600 hover:bg-blue-700 text-white shadow-2xl shadow-blue-500/20'
+                      }`}
+                    >
+                      {isSparkLoading ? (
+                        <>
+                          <Bot className="animate-spin" size={18} />
+                          Processing Distributed Nodes...
+                        </>
+                      ) : (
+                        <>
+                          <Activity size={18} />
+                          Trigger Global Analysis
+                        </>
+                      )}
+                    </button>
+
+                    {jobStatus.status === 'completed' && latestAnalysis && (
+                      <motion.button 
+                        initial={{ opacity: 0, scale: 0.9, x: 20 }}
+                        animate={{ opacity: 1, scale: 1, x: 0 }}
+                        onClick={() => {
+                          setActiveTab('dossier');
+                          window.scrollTo({ top: 0, behavior: 'smooth' });
+                        }}
+                        className="px-8 py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl flex items-center gap-3 font-extrabold uppercase tracking-[0.3em] text-[10px] shadow-[0_0_30px_rgba(16,185,129,0.3)] border border-emerald-400/30 transition-all hover:scale-105"
+                      >
+                        <ShieldCheck size={18} />
+                        Reveal Forensic Dossier
+                        <ArrowRight size={16} />
+                      </motion.button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                 <div className="lg:col-span-2">
+                    <section>
+                      <div className="flex items-center gap-4 mb-8">
+                        <h3 className="text-[10px] uppercase tracking-[0.4em] text-slate-500 font-bold">Processed Intelligence News</h3>
+                        <div className="h-px flex-1 bg-white/5"></div>
+                      </div>
+                      <SparkResults data={sparkResults} />
+                    </section>
+                 </div>
+
+                 <div className="space-y-8">
+                    <section className="royal-card p-8">
+                       <h4 className="text-[10px] uppercase tracking-[0.4em] text-slate-500 font-bold mb-6">Engine Telemetry</h4>
+                       <div className="space-y-6">
+                          <TelemetryItem label="Spark Master" value="local[*]" />
+                          <TelemetryItem label="Node Status" value="Online" color="text-emerald-500" />
+                          <TelemetryItem label="Memory Load" value="2.4 GB / 8.0 GB" />
+                          <TelemetryItem label="Active Jobs" value={isSparkLoading ? "1" : "0"} />
+                       </div>
+                    </section>
+
+                    <section className="p-8 bg-blue-500/5 border border-blue-500/10 rounded-2xl">
+                       <div className="flex items-center gap-3 mb-4">
+                          <ShieldCheck className="text-blue-400" size={18} />
+                          <h4 className="text-[10px] uppercase tracking-[0.2em] text-blue-400 font-black">Data Security Protocol</h4>
+                       </div>
+                       <p className="text-[9px] text-slate-500 leading-relaxed uppercase tracking-wider">
+                          Distributed news processing uses end-to-end encryption. Results are stored in an encapsulated JSON archive.
+                       </p>
+                    </section>
+                 </div>
+              </div>
+            </div>
+          )}
+
         </div>
       </main>
     </div>
@@ -798,6 +1030,15 @@ function NavItem({ icon, label, active, onClick, disabled }: { icon: React.React
       {icon}
       {label}
     </button>
+  );
+}
+
+function TelemetryItem({ label, value, color = 'text-slate-300' }: { label: string, value: any, color?: string }) {
+  return (
+    <div className="flex justify-between items-center pb-4 border-b border-white/5">
+      <span className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">{label}</span>
+      <span className={`text-[10px] font-mono tracking-widest font-bold ${color}`}>{value}</span>
+    </div>
   );
 }
 

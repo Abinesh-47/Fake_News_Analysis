@@ -10,14 +10,16 @@ interface Message {
 
 interface ChatInterfaceProps {
   onAnalysisComplete: (result: any) => void;
+  onAnalysisStart?: () => void;
   isUploading?: boolean;
 }
 
-export default function ChatInterface({ onAnalysisComplete }: ChatInterfaceProps) {
+export default function ChatInterface({ onAnalysisComplete, onAnalysisStart }: ChatInterfaceProps) {
   const apiBase = import.meta.env.VITE_API_URL || '';
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingStep, setLoadingStep] = useState(0);
   const [error, setError] = useState<string | null>(null);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -29,13 +31,33 @@ export default function ChatInterface({ onAnalysisComplete }: ChatInterfaceProps
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, isLoading]);
+  }, [messages, isLoading, loadingStep]);
+
+  // Loading text cycler
+  useEffect(() => {
+    let interval: any;
+    if (isLoading) {
+      setLoadingStep(0);
+      interval = setInterval(() => {
+        setLoadingStep(prev => (prev < 2 ? prev + 1 : prev));
+      }, 5000); // Progress roughly every 5 seconds
+    }
+    return () => clearInterval(interval);
+  }, [isLoading]);
+
+  const loadingMessages = [
+    "🛰️ STAGE 1: INGESTING DATA RECORDS...",
+    "📊 STAGE 2: BIG DATA ENGINE CORRELATION...",
+    "🤖 STAGE 3: FORENSIC AI SYNTHESIS..."
+  ];
 
   const sendToEngine = async (file?: File, text?: string) => {
     if (isLoading) return;
     
     setIsLoading(true);
+    setLoadingStep(0);
     setError(null);
+    if (onAnalysisStart) onAnalysisStart();
 
     // Initial UI update
     if (file) {
@@ -89,7 +111,7 @@ ${result.extractedText ? result.extractedText.substring(0, 500) : 'No text extra
 ${analysis.context}
 
 [TRUE ANALYSIS]
-${analysis.trueAnalysis || "Searching verified news archives..."}
+${analysis.true_analysis || analysis.trueAnalysis || "Searching verified news archives..."}
 ${analysis.correctedValues?.length > 0 ? `\n[CORRECTED DATA]\n${analysis.correctedValues.map((cv: any) => `- ${cv.old} ❌ → ${cv.new} ✅`).join('\n')}` : ''}
 
 [STRATEGIC GROUNDING]
@@ -116,10 +138,10 @@ ${analysis.model_results?.map((m: any) => `- ${m.name}: ${(m.accuracy * 100).toF
         onAnalysisComplete(result.analysis);
       }
 
-    } catch (err) {
+    } catch (err: any) {
       console.error("Neural Error:", err);
-      setError("⚠️ Failed to process input");
-      // Stop infinite loading
+      setError(err.message || "⚠️ Failed to process input");
+      setMessages(prev => (prev || []).filter(m => !m.content.includes("Extracting text")));
     } finally {
       setIsLoading(false);
     }
@@ -177,7 +199,18 @@ ${analysis.model_results?.map((m: any) => `- ${m.name}: ${(m.accuracy * 100).toF
           <div className="flex justify-start">
             <div className="bg-white/5 border border-white/10 p-4 rounded-2xl flex items-center gap-3">
               <Loader2 size={16} className="text-blue-400 animate-spin" />
-              <span className="text-[10px] uppercase font-bold tracking-widest text-slate-400">Synchronizing...</span>
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] uppercase font-bold tracking-widest text-slate-400">
+                  {loadingMessages[loadingStep]}
+                </span>
+                <div className="w-48 h-1 bg-white/5 rounded-full overflow-hidden">
+                  <motion.div 
+                    initial={{ width: "0%" }}
+                    animate={{ width: `${((loadingStep + 1) / 3) * 100}%` }}
+                    className="h-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]"
+                  />
+                </div>
+              </div>
             </div>
           </div>
         )}

@@ -14,7 +14,15 @@ export default defineConfig(({mode}) => {
     },
     server: {
       proxy: {
-        '/api': 'http://localhost:3000',
+        '/api': 'http://localhost:5000',
+      },
+      watch: {
+        ignored: [
+          '**/data_pipeline/**',
+          '**/spark_jobs/**',
+          '**/hdfs_simulation/**',
+          '**/datasets/**'
+        ]
       },
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
