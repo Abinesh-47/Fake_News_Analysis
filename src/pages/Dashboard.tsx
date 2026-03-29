@@ -3,7 +3,7 @@ import {
   Shield, Database, BarChart3, Share2, FileText, 
   History, Lock, LogOut, ChevronRight, Globe, 
   Activity, ShieldCheck, ShieldAlert, Trash, Menu, X, Bot,
-  TrendingUp, Users, Search, ArrowRight
+  TrendingUp, Users, Search, ArrowRight, HelpCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Link } from 'react-router-dom';
@@ -199,13 +199,20 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleAnalysisComplete = (result: AnalysisResult) => {
+  const handleAnalysisComplete = (result: any) => {
     setLatestAnalysis(result);
-    fetchUnifiedResults(); 
-    // Manual redirect from Big Data tab instead of auto-redirect
+    
+    // AUTO-SYNC: Set Spark grid and Unified dossier results immediately from the response
+    if (result.spark_results) {
+      setSparkResults(result.spark_results);
+    }
+    if (result.unified_consensus) {
+      setUnifiedResult(result.unified_consensus);
+    }
 
     // Refresh archive
     if (user) {
+      fetchUnifiedResults(); // For logged in users, we still might want to fetch to ensure sync
       const token = localStorage.getItem('token');
       fetch(`${apiBase}/api/reports`, {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -217,7 +224,7 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
           }
         });
     } else {
-      // GUEST ENHANCEMENT: Persist result to localStorage
+      // GUEST ENHANCEMENT: Persist result to localStorage (Archive tab)
       const guestData = JSON.parse(localStorage.getItem('guestReports') || '[]');
       const newReport = {
         id: Date.now(),
@@ -229,6 +236,20 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
       const updated = [newReport, ...guestData].slice(0, 50); // Keep last 50
       localStorage.setItem('guestReports', JSON.stringify(updated));
       setAllNews(updated);
+
+      // GUEST ENHANCEMENT: Update summary stats locally during session
+      setSummary(prev => {
+        const count = updated.length;
+        const sparkCount = result.spark_results?.length || 0;
+        return {
+          verifiedCount: count,
+          activeSparkNodes: sparkCount,
+          averageCredibility: result.confidence / 100,
+          activeUsers: prev?.activeUsers || 1,
+          dataProcessed: `${(count * 0.05).toFixed(2)} MB`,
+          trend: "+100%"
+        };
+      });
     }
   };
 
@@ -337,6 +358,12 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
                 label="Big Data Engine" 
                 active={activeTab === 'bigdata'} 
                 onClick={() => setActiveTab('bigdata')} 
+              />
+              <NavItem 
+                icon={<HelpCircle size={18} />} 
+                label="Help" 
+                active={activeTab === 'help'} 
+                onClick={() => setActiveTab('help')} 
               />
               
             </nav>
@@ -1004,6 +1031,65 @@ export default function Dashboard({ user, onLogout }: { user: { email: string } 
                        </p>
                     </section>
                  </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'help' && (
+            <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
+              <div className="max-w-4xl">
+                <h3 className="text-2xl font-display font-extrabold text-white uppercase tracking-tight mb-4">System Manual</h3>
+                <p className="text-slate-500 text-[10px] uppercase tracking-[0.2em] mb-12">How to utilize the Imperial Truth Engine</p>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 lg:gap-12">
+                  <section className="space-y-6">
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-full bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 font-bold text-xs">01</div>
+                      <h4 className="text-[10px] uppercase tracking-[0.4em] text-blue-400 font-bold">Data Ingestion</h4>
+                    </div>
+                    <div className="royal-card p-6 lg:p-8 bg-white/5 border border-white/5 rounded-xl">
+                      <p className="text-xs text-slate-300 leading-relaxed">
+                        Submit news claims via the <strong>Sovereign Overview</strong> chat interface. You can type text directly or upload multimedia records (Images/PDFs). The system uses OCR and PDF parsing to extract raw intelligence.
+                      </p>
+                    </div>
+                  </section>
+
+                  <section className="space-y-6">
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-full bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 font-bold text-xs">02</div>
+                      <h4 className="text-[10px] uppercase tracking-[0.4em] text-indigo-400 font-bold">Distributed Analysis</h4>
+                    </div>
+                    <div className="royal-card p-6 lg:p-8 bg-white/5 border border-white/5 rounded-xl">
+                      <p className="text-xs text-slate-300 leading-relaxed">
+                        Once submitted, the <strong>Big Data Engine</strong> automatically triggers a distributed search across global news nodes. Apache Spark clusters refine and correlate this data in real-time to find supporting evidence.
+                      </p>
+                    </div>
+                  </section>
+
+                  <section className="space-y-6">
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 font-bold text-xs">03</div>
+                      <h4 className="text-[10px] uppercase tracking-[0.4em] text-emerald-400 font-bold">Forensic Verification</h4>
+                    </div>
+                    <div className="royal-card p-6 lg:p-8 bg-white/5 border border-white/5 rounded-xl">
+                      <p className="text-xs text-slate-300 leading-relaxed">
+                        The <strong>Intelligence Dossier</strong> provides a unified consensus verdict (REAL or FAKE). It breaks down the claim using ensemble AI models and provides a "True Analysis" based on verified factual grounding.
+                      </p>
+                    </div>
+                  </section>
+
+                  <section className="space-y-6">
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 font-bold text-xs">04</div>
+                      <h4 className="text-[10px] uppercase tracking-[0.4em] text-amber-400 font-bold">Diffusion Mapping</h4>
+                    </div>
+                    <div className="royal-card p-6 lg:p-8 bg-white/5 border border-white/5 rounded-xl">
+                      <p className="text-xs text-slate-300 leading-relaxed">
+                        Navigate to the <strong>Diffusion</strong> tab to visualize how news propagates. This includes reach metrics, velocity, and bot activity detection to identify coordinated misinformation campaigns.
+                      </p>
+                    </div>
+                  </section>
+                </div>
               </div>
             </div>
           )}

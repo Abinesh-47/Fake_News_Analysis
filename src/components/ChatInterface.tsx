@@ -54,10 +54,10 @@ export default function ChatInterface({ onAnalysisComplete, onAnalysisStart }: C
   const sendToEngine = async (file?: File, text?: string) => {
     if (isLoading) return;
     
+    if (onAnalysisStart) onAnalysisStart();
     setIsLoading(true);
     setLoadingStep(0);
     setError(null);
-    if (onAnalysisStart) onAnalysisStart();
 
     // Initial UI update
     if (file) {

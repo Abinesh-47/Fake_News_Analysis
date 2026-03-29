@@ -5,3 +5,9 @@ analytics.db
 uploads/
 .env
 .env.*
+data_pipeline/*.json
+hdfs_simulation/
+spark_jobs/*.json
+response.json
+response_final.json
+results_test.json

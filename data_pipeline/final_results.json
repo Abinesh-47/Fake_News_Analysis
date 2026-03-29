@@ -1,42 +1,40 @@
 {
-  "timestamp": "2026-03-28T17:43:43.217Z",
+  "timestamp": "2026-03-29T03:56:29.420Z",
   "final_result": {
     "verdict": "REAL",
-    "confidence_score": "88.2",
-    "combined_score": "88.2",
-    "spark_score": "78.0",
-    "ai_score": 95,
+    "confidence_score": "87.6",
+    "combined_score": "87.6",
+    "spark_score": "84.0",
+    "ai_score": 90,
     "ai_analysis": {
       "label": "REAL",
-      "confidence": 95,
-      "context": "Ishan Kishan scored 80 runs in his first match as captain against RCB on March 28, 2026, confirming the accuracy of the claim.",
-      "true_analysis": "The claim that Ishan Kishan scored 80 runs from 38 balls in his first IPL match as captain is supported by multiple reliable sources like NDTV Sports and The Times of India. These sources detail that he effectively led the Sunrisers Hyderabad (SRH) team, reinforcing the claim's validity. There are no conflicting reports regarding his performance as the stand-in skipper against RCB on this date.",
-      "truthConfidence": 95,
+      "confidence": 90,
+      "context": "The claim regarding the commencement of candidate nominations for the Tamil Nadu Assembly elections appears to be accurate as corroborated by multiple reports.",
+      "true_analysis": "The claim that 'veṭpūmānudākkal' (candidate nominations) starts tomorrow aligns with reports from Daily Thanthi which indicate nominations will begin amidst upcoming public holidays related to the Tamil Nadu legislative assembly elections. The news discusses the timeframe for nominations and states that only four days are available for submission due to these holidays, confirming the urgency and significance of the situation. The announcement has been presented by a local and reputable news source, lending credibility to the claim.",
+      "truthConfidence": 90,
       "correctedValues": []
     },
-    "sources": [
-      {
-        "title": "IPL 2026 schedule announcement Highlights: RCB to open campaign vs SRH at Chinnaswamy on March 28",
-        "url": "https://www.indiatoday.in/sports/cricket/story/ipl-2026-schedule-announcement-live-csk-rcb-mi-kkr-match-date-venues-2880430-2026-03-11",
-        "source": "India Today"
-      }
-    ],
+    "sources": [],
     "spreaders": [
       {
-        "name": "NDTV Sports",
-        "url": "https://sports.ndtv.com/ipl-2026/rcb-vs-srh-live-score-ipl-2026-royal-challengers-bengaluru-vs-sunrisers-hyderabad-live-cricket-updates-virat-kohli-abhishek-sharma-ishan-kishan-11278956"
+        "name": "Daily Thanthi",
+        "url": "https://www.dailythanthi.com/amp/story/news/tamilnadu/elections-in-full-swing-filing-of-nominations-begins-tomorrow"
       },
       {
-        "name": "ESPNcricinfo",
-        "url": "https://www.espncricinfo.com/series/ipl-2026-1510719/royal-challengers-bengaluru-vs-sunrisers-hyderabad-1st-match-1527674/live-match-blog"
+        "name": "Facebook · Dailythanthi",
+        "url": "https://www.facebook.com/dailythanthi/posts/%E0%AE%AA%E0%AE%B0%E0%AE%AA%E0%AE%B0%E0%AE%AA%E0%AF%8D%E0%AE%AA%E0%AE%BE%E0%AE%95%E0%AF%81%E0%AE%AE%E0%AF%8D-%E0%AE%A4%E0%AF%87%E0%AE%B0%E0%AF%8D%E0%AE%A4%E0%AE%B2%E0%AF%8D%E0%AE%95%E0%AE%B3%E0%AE%AE%E0%AF%8D-%E0%AE%A8%E0%AE%BE%E0%AE%B3%E0%AF%88-%E0%AE%A4%E0%AF%8A%E0%AE%9F%E0%AE%99%E0%AF%8D%E0%AE%95%E0%AF%81%E0%AE%95%E0%AE%BF%E0%AE%B1%E0%AE%A4%E0%AF%81-%E0%AE%B5%E0%AF%87%E0%AE%9F%E0%AF%8D%E0%AE%AA%E0%AF%81%E0%AE%AE%E0%AE%A9%E0%AF%81%E0%AE%A4%E0%AE%BE%E0%AE%95%E0%AF%8D%E0%AE%95%E0%AE%B2%E0%AF%8Dtnassemblyelection-as/1357510779733444/"
       },
       {
-        "name": "The Times of India",
-        "url": "https://timesofindia.indiatimes.com/sports/cricket/news/rcb-vs-srh-today-ipl-2026-match-live-score-royal-challengers-bengaluru-vs-sunrisers-hyderabad-scorecard-playing-11-virat-kohli-abhishek-sharma-chinnaswamy-stadium-bengaluru/liveblog/129863189.cms"
+        "name": "Instagram · news7tamil",
+        "url": "https://www.instagram.com/p/DWc0WyeE4mM/"
       },
       {
-        "name": "Hindustan Times",
-        "url": "https://www.hindustantimes.com/cricket/rcb-vs-srh-live-cricket-score-ipl-2026-match-1-royal-challengers-bengaluru-vs-sunrisers-hyderabad-today-28-march-latest-101774692778942.html"
+        "name": "Facebook · Dailythanthi",
+        "url": "https://www.facebook.com/dailythanthi/posts/justin-%E0%AE%9A%E0%AE%9F%E0%AF%8D%E0%AE%9F%E0%AE%AE%E0%AE%A9%E0%AF%8D%E0%AE%B1%E0%AE%A4%E0%AF%8D-%E0%AE%A4%E0%AF%87%E0%AE%B0%E0%AF%8D%E0%AE%A4%E0%AE%B2%E0%AF%8D-2026-%E0%AE%A4%E0%AE%BF%E0%AE%AE%E0%AF%81%E0%AE%95%E0%AE%B5%E0%AE%BF%E0%AE%A9%E0%AF%8D-%E0%AE%B5%E0%AF%87%E0%AE%9F%E0%AF%8D%E0%AE%AA%E0%AE%BE%E0%AE%B3%E0%AE%B0%E0%AF%8D%E0%AE%95%E0%AE%B3%E0%AF%8D-%E0%AE%AA%E0%AE%9F%E0%AF%8D%E0%AE%9F%E0%AE%BF%E0%AE%AF%E0%AE%B2%E0%AF%8D-%E0%AE%B5%E0%AF%86%E0%AE%B3%E0%AE%BF%E0%AE%AF%E0%AF%80%E0%AE%9F%E0%AF%81dmk-dmkca/1357071583110697/"
+      },
+      {
+        "name": "Daily Thanthi",
+        "url": "https://www.dailythanthi.com/topic/tn-election"
       }
     ]
   },

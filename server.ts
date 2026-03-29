@@ -366,13 +366,13 @@ async function startServer() {
       const trend = (stats?.total || 0) > 0 ? `+${((newsLast24h?.count || 0) / stats.total * 100).toFixed(1)}%` : "0%";
       const activeUsersCount = dbUserId === "guest" ? 1 : 1; // Current viewer is 1
 
-      const total = stats?.total || 0;
-      const avgConf = stats?.avg_conf || 88.5; 
-      const volume = stats?.bytes || 0;
+      const total = dbUserId === "guest" ? 0 : (stats?.total || 0);
+      const avgConf = dbUserId === "guest" ? 0 : (stats?.avg_conf || 88.5); 
+      const volume = dbUserId === "guest" ? 0 : (stats?.bytes || 0);
       
-      // SYNC: For guests, we only show Big Data engine items if they trigger a search
+      // SYNC: For guests, we only show Big Data engine items if they trigger a search (user requested reset to zero on refresh)
       let sparkCount = 0;
-      if (total > 0 || dbUserId !== "guest") {
+      if (dbUserId !== "guest" && (total > 0)) {
         const sparkPath = path.join(__dirname, 'data_pipeline', 'processed_news.json');
         if (fs.existsSync(sparkPath)) {
           try {
@@ -383,15 +383,15 @@ async function startServer() {
       }
 
       const mb = (volume / (1024 * 1024)).toFixed(2);
-      const dataVolume = (total + sparkCount) > 0 ? `${mb} MB` : "0.00 MB";
+      const dataVolume = dbUserId === "guest" ? "0.00 MB" : ((total + sparkCount) > 0 ? `${mb} MB` : "0.00 MB");
 
       res.json({ 
         verifiedCount: total,
         activeSparkNodes: sparkCount,
-        averageCredibility: (avgConf / 100).toFixed(3), 
+        averageCredibility: dbUserId === "guest" ? "0.000" : (avgConf / 100).toFixed(3), 
         activeUsers: activeUsersCount, 
         dataProcessed: dataVolume,
-        trend: trend
+        trend: dbUserId === "guest" ? "0%" : trend
       });
     } catch (err: any) {
       log(`[SUMMARY ERROR] ${err.message}`);
@@ -492,7 +492,10 @@ async function startServer() {
     res.json(jobStatus);
   });
 
-  app.get("/api/final-results", (req, res) => {
+  app.get("/api/final-results", authenticateToken, (req: any, res) => {
+    const dbUserId = req.user?.id?.toString() || "guest";
+    if (dbUserId === "guest") return res.json({ success: true, final_result: null });
+
     const resultsPath = path.join(__dirname, 'data_pipeline', 'final_results.json');
     if (!fs.existsSync(resultsPath)) return res.status(404).json({ success: false, error: "No results found" });
     try {
@@ -503,7 +506,10 @@ async function startServer() {
     }
   });
 
-  app.get("/api/spark/results", (req, res) => {
+  app.get("/api/spark/results", authenticateToken, (req: any, res) => {
+    const dbUserId = req.user?.id?.toString() || "guest";
+    if (dbUserId === "guest") return res.json([]);
+
     const outputPath = path.join(__dirname, 'data_pipeline', 'processed_news.json');
     if (!fs.existsSync(outputPath)) {
       return res.json([]);
@@ -659,10 +665,12 @@ RETURN JSON ONLY:
 
       // --- STAGE 4: UNIFIED INTELLIGENCE MERGER (AI + SPARK) ---
       let sparkScoreAvg = 0;
+      let sparkResultsList: any[] = [];
       try {
         const processedNewsPath = path.join(__dirname, 'data_pipeline', 'processed_news.json');
         if (fs.existsSync(processedNewsPath)) {
           const sparkData = JSON.parse(fs.readFileSync(processedNewsPath, 'utf8'));
+          sparkResultsList = sparkData;
           if (sparkData.length > 0) {
             const sum = sparkData.reduce((acc: number, item: any) => acc + (item.credibility_score || 0), 0);
             sparkScoreAvg = sum / sparkData.length;
@@ -689,6 +697,17 @@ RETURN JSON ONLY:
         spreaders: spreaders.map(s => ({ name: s.name, url: s.url }))
       };
 
+      try {
+        const finalResultsPath = path.join(__dirname, 'data_pipeline', 'final_results.json');
+        const unifiedStorage = {
+          timestamp: new Date().toISOString(),
+          final_result: finalResultPayload,
+          metadata: { version: "V7.2_UNIFIED", integrity_lock: true }
+        };
+        fs.writeFileSync(finalResultsPath, JSON.stringify(unifiedStorage, null, 2));
+        log(`[PIPELINE] Unified intelligence payload locked.`);
+      } catch (pipelineErr: any) { log(`[PIPELINE SYNC FAIL] ${pipelineErr.message}`); }
+
       const analysisResult = {
         ...finalResultPayload,
         label: finalVerdict,
@@ -702,6 +721,8 @@ RETURN JSON ONLY:
         diffusion_data: diffusionData,
         verified_sources: final_verified_sources,
         model_results: verifiedModels,
+        spark_results: sparkResultsList, // SESSION AUTO-SYNC
+        unified_consensus: finalResultPayload, // SESSION AUTO-SYNC
         technicalMetadata: { 
           sourceCount: realSources.length, 
           botActivity: botScore, 
@@ -711,23 +732,14 @@ RETURN JSON ONLY:
         }
       };
 
+      // Automatic save for LOGGED IN users only
       try {
-        const finalResultsPath = path.join(__dirname, 'data_pipeline', 'final_results.json');
-        const unifiedStorage = {
-          timestamp: new Date().toISOString(),
-          final_result: finalResultPayload,
-          metadata: { version: "V7.2_UNIFIED", integrity_lock: true }
-        };
-        fs.writeFileSync(finalResultsPath, JSON.stringify(unifiedStorage, null, 2));
-        log(`[PIPELINE] Unified intelligence payload locked.`);
-      } catch (pipelineErr: any) { log(`[PIPELINE SYNC FAIL] ${pipelineErr.message}`); }
-
-      // Automatic save for ALL users (including guests for metrics)
-      try {
-        const dbUserId = req.user?.id?.toString() || "guest";
-        db.prepare(`INSERT INTO reports (userId, inputText, extractedText, result, sources, createdAt) VALUES (?, ?, ?, ?, ?, ?)`).run(
-          dbUserId, req.body.text || "", text, JSON.stringify(analysisResult), JSON.stringify(realSources), new Date().toISOString()
-        );
+        if (req.user?.id) {
+          const dbUserId = req.user.id.toString();
+          db.prepare(`INSERT INTO reports (userId, inputText, extractedText, result, sources, createdAt) VALUES (?, ?, ?, ?, ?, ?)`).run(
+            dbUserId, req.body.text || "", text, JSON.stringify(analysisResult), JSON.stringify(realSources), new Date().toISOString()
+          );
+        }
       } catch (saveErr: any) { log(`[SAVE ERROR] ${saveErr.message}`); }
 
       log(`[API SUCCESS] Sending forensic payload to client.`);
@@ -748,7 +760,7 @@ RETURN JSON ONLY:
         return res.json({ success: true, message: "Report saved" });
       } catch (err: any) { return res.status(500).json({ success: false, error: err.message }); }
     }
-    return res.json({ success: true, message: "Guest session - not saved" });
+    return res.json({ success: true, message: "Guest session - report not stored in database" });
   }
 
   app.get('/api/reports', authenticateToken, (req: any, res: any) => {
